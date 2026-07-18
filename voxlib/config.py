@@ -69,12 +69,15 @@ class F5TTSConfig(BaseModel):
     model_id: str = "Misha24-10/F5-TTS_RUSSIAN"
     device: str = "cuda"
     ref_audio_sample_rate: int = 24000
+    # Варианты: F5TTS_v1_Base | F5TTS_v1_Base_accent_tune | F5TTS_v1_Base_v2
+    # accent_tune — с полной разметкой ударений, рекомендуется для качества
+    variant: str = "F5TTS_v1_Base_accent_tune"
 
 
 class TTSConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    primary: Literal["qwen3", "f5tts"] = "qwen3"
+    primary: Literal["qwen3", "f5tts"] = "f5tts"
     qwen3: Qwen3Config = Qwen3Config()
     f5tts: F5TTSConfig = F5TTSConfig()
 

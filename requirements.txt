@@ -26,8 +26,8 @@ sentencepiece>=0.2.0
 # TTS — Qwen3-TTS (через transformers или qwen_tts пакет)
 # pip install git+https://github.com/QwenLM/Qwen3-TTS.git
 
-# TTS — F5-TTS (optional)
-# f5-tts>=1.0.0
+# TTS — F5-TTS (primary backend for Russian with stress marks)
+f5-tts>=1.0.0
 
 # Audio processing
 pydub>=0.25.1

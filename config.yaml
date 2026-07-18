@@ -27,19 +27,23 @@ asr:
     language: ru
 
 tts:
-  primary: qwen3
+  primary: f5tts
   qwen3:
-    # Base — voice cloning из референса (3 сек) + генерация (PRIMARY)
+    # Base — voice cloning из референса (3 сек) + генерация (secondary)
     model_id: Qwen/Qwen3-TTS-12Hz-1.7B-Base
     device: cuda
     language: ru
-    # CustomVoice — 9 встроенных голосов + управление эмоциями (опционально)
-    # model_id: Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
-    streaming: false          # false для батч-генерации книги
+    streaming: false
+    # ⚠️ НЕ поддерживает stress marks (+ нотацию от RUAccent)
+    # См. https://github.com/QwenLM/Qwen3-TTS/discussions/53
   f5tts:
+    # PRIMARY — поддерживает stress marks (+) + voice cloning
     model_id: Misha24-10/F5-TTS_RUSSIAN
     device: cuda
     ref_audio_sample_rate: 24000
+    # Варианты: F5TTS_v1_Base | F5TTS_v1_Base_accent_tune | F5TTS_v1_Base_v2
+    # accent_tune — с полной разметкой ударений, рекомендуется для качества
+    variant: F5TTS_v1_Base_accent_tune
 
 voice:
   profiles_dir: ~/.voxlib/speakers

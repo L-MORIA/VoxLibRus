@@ -26,7 +26,7 @@ class TestConfigLoad:
         assert cfg.asr_primary == "gigaam"
 
     def test_tts_primary_is_qwen3(self, cfg: Config):
-        assert cfg.tts_primary == "qwen3"
+            assert cfg.tts_primary == "f5tts"
 
     def test_qwen3_model_is_base(self, cfg: Config):
         """Must be Base, NOT CustomVoice — Base supports voice cloning."""

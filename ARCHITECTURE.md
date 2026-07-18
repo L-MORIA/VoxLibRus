@@ -334,9 +334,9 @@ class WhisperASR(ASRInterface):
 
 ### 5.3 tts/ — TTS слой
 
-**Назначение:** Клонирование голоса и генерация аудио.
+### 5.3 tts/ — TTS слой (генерация)
 
-**base.py:**
+**TTSInterface:**
 ```python
 class TTSInterface(ABC):
     @abstractmethod
@@ -348,28 +348,28 @@ class TTSInterface(ABC):
         """Сгенерировать аудио текста голосом из профиля"""
 ```
 
-**qwen3.py (PRIMARY):**
-```python
-class Qwen3TTS(TTSInterface):
-    model_id = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
-    # Voice clone: от 3 секунд аудио
-    # Native Russian
-    # Multi-speaker: до 4 голосов
-    # Streaming: первый пакет за 97ms
-    # End-to-end LM архитектура
-    # 6-8 GB VRAM
-    # Apache-2.0
-```
-
-**f5tts.py (SECONDARY):**
+**f5tts.py (PRIMARY — единственный бэкенд с поддержкой stress marks):**
 ```python
 class F5TTSBackend(TTSInterface):
     model_id = "Misha24-10/F5-TTS_RUSSIAN"
     # Voice clone: от 10 секунд
-    # Naturalness: 5/5 (лучший для RU)
+    # Naturalness: 5/5 (лучший для RU, поддерживает +stress marks)
+    # RUAccent integration: нативная поддержка `+` перед ударной гласной
     # Speed: 2.3s GPU (быстрее Qwen3)
     # CC-BY-NC license
-    # Сложная интеграция (1/5)
+```
+
+**qwen3.py (SECONDARY — без stress marks поддержки):**
+```python
+class Qwen3TTSBackend(TTSInterface):
+    model_id = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+    # Voice clone: от 3 секунд аудио
+    # Native Russian (10 языков)
+    # ⚠️ НЕ поддерживает stress marks (+нотацию) — GitHub issue #53 открыт с 2026-01
+    # Streaming: первый пакет за 97ms
+    # End-to-end LM архитектура
+    # 6-8 GB VRAM
+    # Apache-2.0
 ```
 
 ### 5.4 audio/ — Аудио слой
@@ -529,19 +529,24 @@ asr:
   # model_id: Qwen/Qwen3-ASR-1.7B (1.7B vs 3B)
 
 tts:
-  primary: qwen3              # qwen3 | f5tts
+  primary: f5tts              # f5tts | qwen3
   qwen3:
-    # Base — voice cloning из референса (3 сек) + генерация (PRIMARY)
+    # Base — voice cloning из референса (3 сек) + генерация (SECONDARY)
     model_id: Qwen/Qwen3-TTS-12Hz-1.7B-Base
     device: cuda
     language: ru
     streaming: false          # false для батч-генерации книги
+    # ⚠️ НЕ поддерживает stress marks (+нотацию) — GitHub issue #53 открыт с 2026-01
     # CustomVoice — 9 встроенных голосов + управление эмоциями (опц.)
     # model_id: Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
   f5tts:
+    # PRIMARY — единственный бэкенд с поддержкой stress marks (+)
     model_id: Misha24-10/F5-TTS_RUSSIAN
     device: cuda
     ref_audio_sample_rate: 24000
+    # Варианты: F5TTS_v1_Base | F5TTS_v1_Base_accent_tune | F5TTS_v1_Base_v2
+    # accent_tune — с полной разметкой ударений, рекомендуется для качества
+    variant: F5TTS_v1_Base_accent_tune
 
 voice:
   profiles_dir: ~/.voxlib/speakers
@@ -619,17 +624,18 @@ audio:
 - [ ] whisper.py — fallback
 - [ ] Тест: транскрипция тестового аудио
 
-### Этап 4: TTS слой — Qwen3 (2-3 дня)
+### Этап 4: TTS слой — F5-TTS PRIMARY (2-3 дня)
 - [ ] base.py — TTSInterface
-- [ ] qwen3.py — Qwen3-TTS-CustomVoice
+- [ ] f5tts.py — F5-TTS_RUSSIAN интеграция (PRIMARY)
 - [ ] voice/manager.py — управление голосовыми профилями
 - [ ] voice/cloner.py — полный процесс клонирования
 - [ ] audio/preprocess.py — подготовка референса
 - [ ] Тест: клонирование + короткая генерация
 
-### Этап 5: TTS слой — F5-TTS (1 день, опционально)
-- [ ] f5tts.py — F5-TTS_RUSSIAN интеграция
-- [ ] Переключение бэкендов через config
+### Этап 5: TTS слой — Qwen3 SECONDARY (1 день, опционально)
+- [ ] qwen3.py — Qwen3-TTS-Base интеграция (без stress marks)
+- [ ] Переключение бэкендов через config.yaml
+- [ ] Apache-2.0 only path
 
 ### Этап 6: Генерация книги (2 дня)
 - [ ] generator.py с resume-механизмом
@@ -656,6 +662,7 @@ audio:
 | Риск | P | I | Митигация |
 |---|---|---|---|
 | **Qwen3-TTS не устанавливается на Windows** | Средний | Высокий | Использовать портативную сборку timoncool/Qwen3-TTS_portable_rus |
+| **Qwen3-TTS НЕ поддерживает stress marks (+)** | Высокий | Высокий | **Primary = F5-TTS_RUSSIAN** (нативная поддержка `+`). Qwen3 как secondary только для Apache-2.0 |
 | **GigaAM-v3 не работает через transformers** | Низкий | Средний | Fallback на Qwen3-ASR-1.7B (1.7B, Apache-2.0) — легче Whisper (3B) и не требует pyannote/torchcodec |
 | **VRAM не хватает (Qwen3 ~6-8GB + GigaAM ~1-2GB)** | Средний | Средний | Последовательная загрузка: GigaAM → выгрузить → Qwen3. CPU-offload для текст. слоя |
 | **Качество voice cloning хуже ожидаемого** | Средний | Высокий | F5-TTS как альтернативный бэкенд. Улучшить препроцессинг референса |
