@@ -1,0 +1,61 @@
+project:
+  name: VoxLibRus
+  output_dir: ./output
+  temp_dir: ./temp
+
+book:
+  extract:
+    pdf_engine: pdfplumber
+    epub_engine: ebooklib
+    docx_engine: markitdown
+
+reference:
+  target_sample_rate: 24000
+  noise_reduce: true
+  trim_silence: true
+  normalize_peak_db: -3
+
+asr:
+  primary: gigaam
+  gigaam:
+    model_id: ai-sage/GigaAM-v3
+    revision: e2e_rnnt
+    device: cuda
+  whisper:
+    model_id: openai/whisper-large-v3
+    device: cuda
+    language: ru
+
+tts:
+  primary: qwen3
+  qwen3:
+    # Base — voice cloning из референса (3 сек) + генерация (PRIMARY)
+    model_id: Qwen/Qwen3-TTS-12Hz-1.7B-Base
+    device: cuda
+    language: ru
+    # CustomVoice — 9 встроенных голосов + управление эмоциями (опционально)
+    # model_id: Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+    streaming: false          # false для батч-генерации книги
+  f5tts:
+    model_id: Misha24-10/F5-TTS_RUSSIAN
+    device: cuda
+    ref_audio_sample_rate: 24000
+
+voice:
+  profiles_dir: ~/.voxlib/speakers
+
+generation:
+  chunk_max_chars: 1000
+  chunk_overlap_chars: 50
+  save_every_n: 10
+  clear_cache_every_n: 20
+  max_retries: 3
+  retry_delay: 5
+
+audio:
+  target_lufs: -16
+  peak_dbfs: -1
+  chapter_pause_sec: 2.5
+  output:
+    format: mp3
+    mp3_bitrate: 192
