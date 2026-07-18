@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Optional
 
 import torch
-import torchaudio
 
 from voxlib.asr.base import ASRInterface, TranscriptionResult
 from voxlib.config import GigaAMConfig
@@ -40,8 +39,7 @@ class GigaAMBackend(ASRInterface):
 
         try:
             from transformers import AutoModel, AutoConfig
-            from safetensors.torch import load_file, save_file
-            from huggingface_hub import hf_hub_download
+            from safetensors.torch import load_file
         except ImportError as e:
             raise RuntimeError(
                 "Required packages not installed. Run: pip install transformers safetensors huggingface_hub"
@@ -94,6 +92,7 @@ class GigaAMBackend(ASRInterface):
         if not os.path.exists(safetensors_path):
             print(f"Converting {bin_path} to safetensors...")
             state_dict = torch.load(bin_path, map_location="cpu", weights_only=True)
+            from safetensors.torch import save_file
             save_file(state_dict, safetensors_path)
             print(f"Saved safetensors to: {safetensors_path}")
 
@@ -122,8 +121,6 @@ class GigaAMBackend(ASRInterface):
         # Use model's built-in transcribe method (handles audio loading via ffmpeg)
         with torch.no_grad():
             transcription = self._model.transcribe(audio_path)
-
-        duration = time.time() - start_time
 
         return TranscriptionResult(
             text=transcription.strip(),
