@@ -41,6 +41,8 @@ class PipelineState:
     voice_profile: Optional[dict] = None
     tts_backend: str = "f5tts"
     asr_backend: str = "gigaam"
+    final_mp3: Optional[str] = None
+    final_m4b: Optional[str] = None
 
     def to_json(self) -> str:
         return json.dumps(self.__dict__, ensure_ascii=False, indent=2)
