@@ -10,10 +10,12 @@ Usage: model = AutoModel.from_pretrained("ai-sage/GigaAM-v3", revision="e2e_rnnt
 
 import warnings
 import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 import torch
+import torchaudio
 
 from voxlib.asr.base import ASRInterface, TranscriptionResult
 from voxlib.config import GigaAMConfig
@@ -26,6 +28,8 @@ class GigaAMBackend(ASRInterface):
     Loads from local safetensors file (converted from pytorch_model.bin) to avoid
     torch.load vulnerability (CVE-2025-32434).
     """
+
+    MAX_DURATION_SECONDS = 25.0  # Model limit for direct transcribe
 
     def __init__(self, config: GigaAMConfig):
         self.config = config
@@ -40,6 +44,7 @@ class GigaAMBackend(ASRInterface):
         try:
             from transformers import AutoModel, AutoConfig
             from safetensors.torch import load_file
+            from huggingface_hub import hf_hub_download
         except ImportError as e:
             raise RuntimeError(
                 "Required packages not installed. Run: pip install transformers safetensors huggingface_hub"
@@ -105,6 +110,9 @@ class GigaAMBackend(ASRInterface):
     ):
         """Transcribe audio file to text using GigaAM's built-in transcribe method.
 
+        For files longer than 25 seconds, automatically chunks into segments
+        and concatenates results.
+
         Args:
             audio_path: Path to audio file (WAV, MP3, etc.). The model uses ffmpeg internally
                        to load and resample the audio.
@@ -116,19 +124,94 @@ class GigaAMBackend(ASRInterface):
         self._load_model()
 
         import time
+
         start_time = time.time()
 
-        # Use model's built-in transcribe method (handles audio loading via ffmpeg)
-        with torch.no_grad():
-            transcription = self._model.transcribe(audio_path)
+        # Check audio duration
+        info = torchaudio.info(audio_path)
+        duration = info.num_frames / info.sample_rate
+
+        # If short enough, transcribe directly
+        if duration <= self.MAX_DURATION_SECONDS:
+            with torch.no_grad():
+                transcription = self._model.transcribe(audio_path)
+
+            return TranscriptionResult(
+                text=transcription.strip(),
+                language=language or "ru",
+                duration_seconds=time.time() - start_time,
+                confidence=None,
+                segments=None,
+            )
+
+        # Long audio: chunk and transcribe
+        print(f"Audio duration: {duration:.1f}s, splitting into chunks...")
+
+        chunk_files = self._chunk_audio(audio_path, max_duration=self.MAX_DURATION_SECONDS)
+
+        print(f"Split into {len(chunk_files)} chunks")
+
+        transcriptions = []
+        for i, chunk_path in enumerate(chunk_files):
+            print(f"  Transcribing chunk {i+1}/{len(chunk_files)}...")
+            with torch.no_grad():
+                chunk_text = self._model.transcribe(chunk_path)
+            transcriptions.append(chunk_text.strip())
+            # Clean up temp chunk file
+            os.unlink(chunk_path)
+
+        # Concatenate transcriptions
+        full_text = " ".join(transcriptions)
 
         return TranscriptionResult(
-            text=transcription.strip(),
+            text=full_text.strip(),
             language=language or "ru",
             duration_seconds=time.time() - start_time,
             confidence=None,
             segments=None,
         )
+
+    def _chunk_audio(self, audio_path: str, max_duration: float) -> list:
+        """Split audio file into chunks of max_duration seconds.
+
+        Returns list of paths to temporary WAV chunk files.
+        """
+        # Load audio
+        waveform, sample_rate = torchaudio.load(audio_path)
+
+        # Convert to mono
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+
+        # Resample to 16kHz if needed
+        target_sr = 16000
+        if sample_rate != target_sr:
+            resampler = torchaudio.transforms.Resample(sample_rate, target_sr)
+            waveform = resampler(waveform)
+            sample_rate = target_sr
+
+        chunk_files = []
+
+        start = 0
+        overlap_samples = int(0.5 * 16000)  # 0.5s overlap
+
+        while start < waveform.shape[1]:
+            end = min(start + int(max_duration * 16000), waveform.shape[1])
+            chunk = waveform[:, start:end]
+
+            if chunk.shape[1] < 16000 * 0.5:  # Skip very short chunks
+                break
+
+            # Save chunk to temp file
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                chunk_path = tmp.name
+
+            torchaudio.save(chunk_path, chunk, 16000)
+            chunk_files.append(chunk_path)
+
+            start += int(max_duration * 16000) - int(0.5 * 16000)
+
+        return chunk_files
 
     def transcribe_batch(
         self,
@@ -137,3 +220,6 @@ class GigaAMBackend(ASRInterface):
     ) -> list:
         """Transcribe multiple audio files."""
         return [self.transcribe(path, language) for path in audio_paths]
+
+
+from typing import Optional
