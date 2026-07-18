@@ -608,28 +608,29 @@ audio:
 ## 9. План реализации
 
 ### Этап 1: Базовый скелет (1 день)
-- [ ] Структура проекта, pyproject.toml, requirements.txt
-- [ ] config.py — загрузка конфигурации
-- [ ] CLI main.py — базовая команда `voxlib`
+- [x] Структура проекта, pyproject.toml, requirements.txt
+- [x] config.py — загрузка конфигурации
+- [x] CLI main.py — базовая команда `voxlib`
 
 ### Этап 2: Текстовый слой (1 день)
-- [ ] extractor.py — извлечение из PDF (+ тесты)
-- [ ] extractor.py — EPUB, DOCX (+ тесты)
-- [ ] cleaner.py — нормализация русского текста (+ тесты)
-- [ ] chunker.py — фрагментация (+ тесты)
+- [x] extractor.py — извлечение из PDF (+ тесты)
+- [x] extractor.py — EPUB, DOCX (+ тесты)
+- [x] cleaner.py — нормализация русского текста (+ тесты)
+- [x] chunker.py — фрагментация (+ тесты)
+- [x] accents.py — расстановка ударений RUAccent (+ тесты)
 
 ### Этап 3: ASR слой (1-2 дня)
-- [ ] base.py — ASRInterface
-- [ ] gigaam.py — GigaAM-v3 интеграция
-- [ ] whisper.py — fallback
+- [x] base.py — ASRInterface
+- [x] gigaam.py — GigaAM-v3 интеграция (safetensors, long audio chunking)
+- [x] whisper.py — fallback
 - [ ] Тест: транскрипция тестового аудио
 
 ### Этап 4: TTS слой — F5-TTS PRIMARY (2-3 дня)
-- [ ] base.py — TTSInterface
-- [ ] f5tts.py — F5-TTS_RUSSIAN интеграция (PRIMARY)
+- [x] base.py — TTSInterface
+- [x] f5tts.py — F5-TTS_RUSSIAN интеграция (PRIMARY, stress marks +)
 - [ ] voice/manager.py — управление голосовыми профилями
-- [ ] voice/cloner.py — полный процесс клонирования
-- [ ] audio/preprocess.py — подготовка референса
+- [x] voice/cloner.py — полный процесс клонирования
+- [x] audio/preprocess.py — подготовка референса
 - [ ] Тест: клонирование + короткая генерация
 
 ### Этап 5: TTS слой — Qwen3 SECONDARY (1 день, опционально)
@@ -638,22 +639,22 @@ audio:
 - [ ] Apache-2.0 only path
 
 ### Этап 6: Генерация книги (2 дня)
-- [ ] generator.py с resume-механизмом
-- [ ] utils/resume.py — прогресс-трекер
+- [x] generator.py через pipeline.py с resume-механизмом
+- [ ] utils/resume.py — прогресс-трекер (встроен в pipeline.py)
 - [ ] utils/gpu.py — управление VRAM
 - [ ] Пакетная обработка всей книги
 - [ ] Тест: генерация 50 фрагментов
 
 ### Этап 7: Постобработка и сборка (1 день)
-- [ ] audio/normalize.py — LUFS нормализация
-- [ ] audio/assemble.py — склейка + экспорт
+- [x] audio/normalize.py — LUFS нормализация
+- [x] audio/assemble.py — склейка + экспорт MP3/M4B
 - [ ] Тест: сборка audiobook из 10 фрагментов
 
 ### Этап 8: Интеграция и тестирование (1-2 дня)
-- [ ] pipeline.py — полный пайплайн
-- [ ] CLI: voxlib run --book ... --reference ...
+- [x] pipeline.py — полный пайплайн (8 stages, resume)
+- [x] CLI: voxlib run --book ... --reference ...
 - [ ] Full test: книга 20 стр → audiobook
-- [ ] README, примеры, документация
+- [x] README, примеры, документация
 
 ---
 
