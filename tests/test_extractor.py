@@ -68,15 +68,15 @@ class TestSupportedFormats:
         assert "42" in all_text
         assert "3.14" in all_text
 
-    def test_epub_spine_order_not_manifest(self, fixtures):
+    def test_epub_spine_order_not_manifest(self, tmp_path):
         """EPUB extraction should follow spine order (reading order), not manifest order.
         
         Regression test for: manifest lists 3,1,2 but spine says 1,2,3.
         Extractor must return chapters in spine order: Глава 1, Глава 2, Глава 3.
         """
         # Create the special fixture
-        from tests.fixtures import FIXTURES_DIR, _create_epub_manifest_vs_spine
-        epub_path = FIXTURES_DIR / "epub_spine_test.epub"
+        from tests.fixtures import _create_epub_manifest_vs_spine
+        epub_path = tmp_path / "epub_spine_test.epub"
         _create_epub_manifest_vs_spine(epub_path)
         
         result = extract(epub_path)

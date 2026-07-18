@@ -3,6 +3,8 @@ __pycache__/
 .env
 .venv
 venv/
+.deps/
+tests/fixtures/sample.docx
 *.egg-info/
 dist/
 build/

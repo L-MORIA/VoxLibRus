@@ -113,6 +113,13 @@ def chunk_text(
     Returns:
         List of Chunk dicts with id, chapter, text, chars metadata.
     """
+    if max_chars <= 0:
+        raise ValueError("max_chars must be greater than zero")
+    if min_chars < 0:
+        raise ValueError("min_chars must not be negative")
+    if overlap < 0:
+        raise ValueError("overlap must not be negative")
+
     chunks: List[Chunk] = []
     chunk_id = 0
 
@@ -148,7 +155,10 @@ def chunk_text(
                     chunks.append(c)
                     chapter_chunks.append(c)
                     # For overlap, find word boundary to avoid cutting words
-                    overlap_start = _find_overlap_start(remaining, break_pos, overlap)
+                    # A large overlap must never keep the whole input unchanged,
+                    # otherwise this loop would never make progress.
+                    safe_overlap = min(overlap, max(0, break_pos - 1))
+                    overlap_start = _find_overlap_start(remaining, break_pos, safe_overlap)
                     remaining = remaining[overlap_start:].strip()
 
                 if remaining:
@@ -157,15 +167,13 @@ def chunk_text(
 
             # If adding segment exceeds max_chars, flush buffer first
             if buffer and len(buffer) + len(segment) + 1 > max_chars:
-                if len(buffer) >= min_chars or not segment:
-                    chunk_id += 1
-                    c = _make_chunk(chunk_id, chapter_title, buffer.strip())
-                    chunks.append(c)
-                    chapter_chunks.append(c)
-                    buffer = segment
-                else:
-                    # Buffer too small, keep accumulating
-                    buffer += " " + segment
+                # The maximum is a hard limit for TTS backends. A short chunk
+                # is preferable to emitting an invalid, overlong one.
+                chunk_id += 1
+                c = _make_chunk(chunk_id, chapter_title, buffer.strip())
+                chunks.append(c)
+                chapter_chunks.append(c)
+                buffer = segment
             else:
                 buffer = (buffer + " " + segment).strip() if buffer else segment
 

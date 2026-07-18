@@ -28,6 +28,17 @@ class UnsupportedFormatError(ExtractionError):
 SUPPORTED_EXTENSIONS = {".pdf", ".epub", ".docx"}
 
 
+def _add_chapter(chapters: BookContent, title: str, text: str) -> None:
+    """Store a chapter without silently overwriting a repeated title."""
+    base_title = title or "Текст"
+    chapter_title = base_title
+    duplicate = 2
+    while chapter_title in chapters:
+        chapter_title = f"{base_title} ({duplicate})"
+        duplicate += 1
+    chapters[chapter_title] = text
+
+
 # ── PDF extraction ───────────────────────────────────────────
 
 def _extract_pdf(path: Path) -> BookContent:
@@ -145,7 +156,7 @@ def _extract_epub(path: Path) -> BookContent:
 
         text = soup.get_text(separator="\n", strip=True)
         if text:
-            chapters[chapter_title or "Текст"] = text
+            _add_chapter(chapters, chapter_title, text)
 
     if not chapters:
         chapters = {"Текст": ""}
@@ -155,45 +166,51 @@ def _extract_epub(path: Path) -> BookContent:
 
 # ── DOCX extraction ──────────────────────────────────────────
 
+def _extract_docx_with_python_docx(path: Path) -> BookContent:
+    """Extract DOCX directly when MarkItDown or its extras are unavailable."""
+    try:
+        import docx
+    except ImportError as exc:
+        raise ExtractionError(
+            "DOCX extraction requires markitdown[docx] or python-docx. "
+            "Run: pip install 'markitdown[docx]'"
+        ) from exc
+
+    doc = docx.Document(str(path))
+    chapters: BookContent = {}
+    current_chapter = "Текст"
+    current_lines: List[str] = []
+
+    def flush() -> None:
+        if current_lines:
+            _add_chapter(chapters, current_chapter, "\n".join(current_lines))
+            current_lines.clear()
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+        style = para.style.name.lower() if para.style else ""
+        if "heading" in style or "глава" in style:
+            flush()
+            current_chapter = text[:120]
+        else:
+            current_lines.append(text)
+
+    flush()
+    return chapters if chapters else {"Текст": ""}
+
+
 def _extract_docx(path: Path) -> BookContent:
-    """Extract text from DOCX using markitdown or python-docx."""
+    """Extract text from DOCX using MarkItDown with a robust local fallback."""
     try:
         from markitdown import MarkItDown
-    except ImportError:
-        try:
-            # Fallback to python-docx
-            import docx
-            doc = docx.Document(str(path))
-            chapters: BookContent = {}
-            current_chapter = "Текст"
-            current_lines: List[str] = []
+        result = MarkItDown().convert(str(path))
+    except Exception:
+        # A bare MarkItDown installation lacks the optional DOCX converter.
+        # python-docx remains a lightweight, deterministic fallback.
+        return _extract_docx_with_python_docx(path)
 
-            for para in doc.paragraphs:
-                text = para.text.strip()
-                if not text:
-                    continue
-                style = para.style.name.lower() if para.style else ""
-                if "heading" in style or "глава" in style or "heading" in style:
-                    if current_lines:
-                        chapters[current_chapter] = "\n".join(current_lines)
-                    current_chapter = text[:120]
-                    current_lines = []
-                else:
-                    current_lines.append(text)
-
-            if current_lines:
-                chapters[current_chapter] = "\n".join(current_lines)
-            return chapters if chapters else {"Текст": ""}
-
-        except ImportError:
-            raise ExtractionError(
-                "markitdown or python-docx not installed. "
-                "Run: pip install markitdown  # or python-docx"
-            )
-
-    # Use markitdown (handles DOCX natively)
-    md = MarkItDown()
-    result = md.convert(str(path))
     # Parse markdown output for chapter-like headers
     chapters: BookContent = {}
     current_chapter = "Текст"
@@ -202,14 +219,14 @@ def _extract_docx(path: Path) -> BookContent:
     for line in result.text_content.split("\n"):
         if line.startswith("# ") or line.startswith("## "):
             if current_lines:
-                chapters[current_chapter] = "\n".join(current_lines).strip()
+                _add_chapter(chapters, current_chapter, "\n".join(current_lines).strip())
             current_chapter = line.lstrip("#").strip()[:120]
             current_lines = []
         else:
             current_lines.append(line)
 
     if current_lines:
-        chapters[current_chapter] = "\n".join(current_lines).strip()
+        _add_chapter(chapters, current_chapter, "\n".join(current_lines).strip())
     return chapters if chapters else {"Текст": result.text_content.strip()}
 
 

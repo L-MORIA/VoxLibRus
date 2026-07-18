@@ -1,5 +1,7 @@
 """Tests for text chunking."""
 
+import pytest
+
 from voxlib.text.chunker import chunk_text, _find_break_point, _split_sentences
 
 
@@ -139,3 +141,17 @@ class TestEdgeCases:
         combined = " ".join(c["text"] for c in result)
         # Should contain all words approximately
         assert len(combined) >= len(text) * 0.8  # Some overlap but no data loss
+
+    def test_small_buffer_never_makes_an_overlong_chunk(self):
+        text = "а" * 200 + "\n\n" + "б" * 900
+        result = chunk_text({"Глава": text}, max_chars=1000, min_chars=500)
+        assert all(chunk["chars"] <= 1000 for chunk in result)
+
+    @pytest.mark.parametrize("kwargs", [
+        {"max_chars": 0},
+        {"min_chars": -1},
+        {"overlap": -1},
+    ])
+    def test_invalid_chunking_settings_fail_fast(self, kwargs):
+        with pytest.raises(ValueError):
+            chunk_text({"Глава": "Текст"}, **kwargs)

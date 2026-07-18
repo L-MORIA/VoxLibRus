@@ -1,8 +1,8 @@
 """Configuration management for VoxLibRus — Pydantic-validated."""
 
 from pathlib import Path
-from typing import Literal
-from pydantic import BaseModel, model_validator, ConfigDict
+from typing import Any, Literal
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 import yaml
 
 
@@ -88,12 +88,18 @@ class VoiceConfig(BaseModel):
 class GenerationConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    chunk_max_chars: int = 1000
-    chunk_overlap_chars: int = 50
-    save_every_n: int = 10
-    clear_cache_every_n: int = 20
-    max_retries: int = 3
-    retry_delay: int = 5
+    chunk_max_chars: int = Field(default=1000, gt=0)
+    chunk_overlap_chars: int = Field(default=50, ge=0)
+    save_every_n: int = Field(default=10, gt=0)
+    clear_cache_every_n: int = Field(default=20, gt=0)
+    max_retries: int = Field(default=3, ge=0)
+    retry_delay: int = Field(default=5, ge=0)
+
+    @model_validator(mode="after")
+    def validate_chunking(self):
+        if self.chunk_overlap_chars >= self.chunk_max_chars:
+            raise ValueError("chunk_overlap_chars must be smaller than chunk_max_chars")
+        return self
 
 
 class OutputConfig(BaseModel):
@@ -156,7 +162,9 @@ class Config(BaseModel):
         if not path.exists():
             raise FileNotFoundError(f"Config not found: {path}")
         with open(path, encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
+            raw: Any = yaml.safe_load(f) or {}
+        if not isinstance(raw, dict):
+            raise ValueError("Config root must be a YAML mapping")
         return cls(**raw)
 
     # ── Удобные property-шорткаты ──────────────────────────

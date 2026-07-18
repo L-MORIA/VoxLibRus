@@ -6,7 +6,8 @@ transformers>=4.40.0
 # Text processing
 pdfplumber>=0.10.0
 ebooklib>=0.18
-markitdown>=0.1.0[docx]
+markitdown[docx]>=0.1.0
+python-docx>=1.1.0
 beautifulsoup4>=4.12
 lxml>=5.0
 num2words>=0.5.12

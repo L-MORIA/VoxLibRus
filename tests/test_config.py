@@ -99,3 +99,17 @@ class TestEdgeCases:
     def test_missing_yaml_raises(self):
         with pytest.raises(FileNotFoundError):
             Config.from_yaml(Path("/nonexistent/config.yaml"))
+
+    def test_empty_config_uses_defaults(self, tmp_path):
+        path = tmp_path / "empty.yaml"
+        path.write_text("", encoding="utf-8")
+        assert Config.from_yaml(path).project.name == "VoxLibRus"
+
+    def test_chunk_overlap_must_be_smaller_than_chunk_size(self, tmp_path):
+        path = tmp_path / "invalid.yaml"
+        path.write_text(
+            "generation:\n  chunk_max_chars: 100\n  chunk_overlap_chars: 100\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValidationError, match="chunk_overlap_chars"):
+            Config.from_yaml(path)
