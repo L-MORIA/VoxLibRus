@@ -20,29 +20,23 @@ asr:
   gigaam:
     model_id: ai-sage/GigaAM-v3
     revision: e2e_rnnt
-    device: cuda
+    device: cpu           # RTX 5060 Ti (sm_120) requires PyTorch 2.6+
   whisper:
     model_id: openai/whisper-large-v3
-    device: cuda
+    device: cpu
     language: ru
 
 tts:
   primary: f5tts
   qwen3:
-    # Base — voice cloning из референса (3 сек) + генерация (secondary)
     model_id: Qwen/Qwen3-TTS-12Hz-1.7B-Base
-    device: cuda
+    device: cpu
     language: ru
     streaming: false
-    # ⚠️ НЕ поддерживает stress marks (+ нотацию от RUAccent)
-    # См. https://github.com/QwenLM/Qwen3-TTS/discussions/53
   f5tts:
-    # PRIMARY — поддерживает stress marks (+) + voice cloning
     model_id: Misha24-10/F5-TTS_RUSSIAN
-    device: cuda
+    device: cpu
     ref_audio_sample_rate: 24000
-    # Варианты: F5TTS_v1_Base | F5TTS_v1_Base_accent_tune | F5TTS_v1_Base_v2
-    # accent_tune — с полной разметкой ударений, рекомендуется для качества
     variant: F5TTS_v1_Base_accent_tune
 
 voice:

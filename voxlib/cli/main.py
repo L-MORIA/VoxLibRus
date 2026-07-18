@@ -32,7 +32,7 @@ def run(
     force_restart: bool = typer.Option(False, "--force", help="Ignore existing pipeline state"),
 ):
     """Full pipeline: extract → transcribe → clone → generate → assemble."""
-    config_obj = _load_config(config)
+    _load_config(config)
     typer.echo(f"📖 Book: {book}")
     typer.echo(f"🎤 Reference: {reference}")
     typer.echo(f"🔊 Output: {output}")
@@ -43,7 +43,6 @@ def run(
         voice_ref_audio=str(reference),
         voice_ref_text=None,  # will be transcribed
         voice_name=output,
-        config=config_obj,
         force_restart=force_restart,
     )
 

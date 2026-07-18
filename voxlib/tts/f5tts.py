@@ -84,9 +84,9 @@ class F5TTSBackend(TTSInterface):
 
         # Map variant to HF repo file
         variant_map = {
-            "F5TTS_v1_Base": "F5TTS_v1_Base/model_1200000.pt",
-            "F5TTS_v1_Base_accent_tune": "F5TTS_v1_Base_accent_tune/model_1200000.pt",
-            "F5TTS_v1_Base_v2": "F5TTS_v1_Base_v2/model_1200000.pt",
+            "F5TTS_v1_Base": "F5TTS_v1_Base/model_240000.pt",
+            "F5TTS_v1_Base_accent_tune": "F5TTS_v1_Base_accent_tune/model_last.pt",
+            "F5TTS_v1_Base_v2": "F5TTS_v1_Base_v2/model_last.pt",
         }
 
         from huggingface_hub import hf_hub_download
