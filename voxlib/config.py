@@ -162,6 +162,7 @@ class Config(BaseModel):
 
     @classmethod
     def from_yaml(cls, path: Path = DEFAULT_CONFIG_PATH) -> "Config":
+        path = Path(path) if not isinstance(path, Path) else path
         if not path.exists():
             raise FileNotFoundError(f"Config not found: {path}")
         with open(path, encoding="utf-8") as f:

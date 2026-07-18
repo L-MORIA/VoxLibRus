@@ -28,6 +28,8 @@ class PipelineState:
     output_dir: str
     temp_dir: str
     voice_name: str
+    voice_ref_audio: str = ""
+    voice_ref_text: Optional[str] = None
 
     # Progress tracking
     stages_completed: list[str] = field(default_factory=list)
@@ -145,6 +147,8 @@ class Pipeline:
             state = self._create_state(book_path, voice_name)
 
         self.state = state
+        state.voice_ref_audio = voice_ref_audio
+        state.voice_ref_text = voice_ref_text
         self._save_state()
 
         try:
