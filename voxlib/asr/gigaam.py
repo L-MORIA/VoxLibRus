@@ -44,7 +44,6 @@ class GigaAMBackend(ASRInterface):
         try:
             from transformers import AutoModel, AutoConfig
             from safetensors.torch import load_file
-            from huggingface_hub import hf_hub_download
         except ImportError as e:
             raise RuntimeError(
                 "Required packages not installed. Run: pip install transformers safetensors huggingface_hub"
@@ -209,7 +208,7 @@ class GigaAMBackend(ASRInterface):
             torchaudio.save(chunk_path, chunk, 16000)
             chunk_files.append(chunk_path)
 
-            start += int(max_duration * 16000) - int(0.5 * 16000)
+            start += int(max_duration * 16000) - overlap_samples
 
         return chunk_files
 
@@ -221,5 +220,3 @@ class GigaAMBackend(ASRInterface):
         """Transcribe multiple audio files."""
         return [self.transcribe(path, language) for path in audio_paths]
 
-
-from typing import Optional
