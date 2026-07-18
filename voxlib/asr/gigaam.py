@@ -2,11 +2,15 @@
 
 Model: ai-sage/GigaAM-v3
 License: MIT
-WER on Russian: ~8.4%
+WER on Russian: ~8.4% (e2e_rnnt revision)
 Requires: trust_remote_code=True (custom model code)
+Usage: model = AutoModel.from_pretrained("ai-sage/GigaAM-v3", revision="e2e_rnnt", trust_remote_code=True)
+       transcription = model.transcribe("example.wav")
 """
 
 import warnings
+import os
+from pathlib import Path
 from typing import Optional
 
 import torch
@@ -17,99 +21,115 @@ from voxlib.config import GigaAMConfig
 
 
 class GigaAMBackend(ASRInterface):
-    """GigaAM-v3 ASR backend using Hugging Face transformers."""
+    """GigaAM-v3 ASR backend using Hugging Face transformers with trust_remote_code.
+
+    Uses the model's built-in .transcribe() method which handles preprocessing internally.
+    Loads from local safetensors file (converted from pytorch_model.bin) to avoid
+    torch.load vulnerability (CVE-2025-32434).
+    """
 
     def __init__(self, config: GigaAMConfig):
         self.config = config
         self._model = None
-        self._processor = None
         self._device = torch.device(config.device)
 
     def _load_model(self):
-        """Lazy load GigaAM-v3 model."""
+        """Lazy load GigaAM-v3 model from local safetensors."""
         if self._model is not None:
             return
 
         try:
-            from transformers import AutoModelForCTC, AutoProcessor
+            from transformers import AutoModel, AutoConfig
+            from safetensors.torch import load_file, save_file
+            from huggingface_hub import hf_hub_download
         except ImportError as e:
             raise RuntimeError(
-                "transformers not installed. Run: pip install transformers"
+                "Required packages not installed. Run: pip install transformers safetensors huggingface_hub"
             ) from e
 
         # Suppress specific warnings
         warnings.filterwarnings("ignore", category=UserWarning, module="transformers")
 
-        # GigaAM-v3 requires trust_remote_code=True
-        self._processor = AutoProcessor.from_pretrained(
-            self.config.model_id,
-            revision=self.config.revision,
+        # Download and convert to safetensors if needed
+        repo_id = self.config.model_id
+        revision = self.config.revision
+        safetensors_path = self._get_or_create_safetensors(repo_id, revision)
+
+        # Load model config first (with trust_remote_code)
+        config = AutoConfig.from_pretrained(
+            repo_id,
+            revision=revision,
             trust_remote_code=True,
         )
-        self._model = AutoModelForCTC.from_pretrained(
-            self.config.model_id,
-            revision=self.config.revision,
-            trust_remote_code=True,
-            torch_dtype=torch.float16 if self.config.device == "cuda" else torch.float32,
-        ).to(self._device)
 
+        # Create model from config (no weights)
+        model = AutoModel.from_config(
+            config,
+            trust_remote_code=True,
+            dtype=torch.float16 if self.config.device == "cuda" else torch.float32,
+        )
+
+        # Load weights from safetensors
+        state_dict = load_file(safetensors_path)
+        model.load_state_dict(state_dict, strict=False)
+
+        self._model = model.to(self._device)
         self._model.eval()
 
-    def _load_audio(self, audio_path: str, target_sr: int = 16000) -> torch.Tensor:
-        """Load and resample audio to target sample rate."""
-        waveform, sample_rate = torchaudio.load(audio_path)
+    def _get_or_create_safetensors(self, repo_id: str, revision: str) -> str:
+        """Download model and convert to safetensors if needed."""
+        from huggingface_hub import hf_hub_download
+        from safetensors.torch import save_file
+        import torch
 
-        # Convert to mono
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
+        # Get the cached bin file path
+        bin_path = hf_hub_download(
+            repo_id=repo_id,
+            filename="pytorch_model.bin",
+            revision=revision,
+        )
 
-        # Resample if needed
-        if sample_rate != target_sr:
-            resampler = torchaudio.transforms.Resample(sample_rate, target_sr)
-            waveform = resampler(waveform)
+        safetensors_path = Path(bin_path).with_suffix(".safetensors")
 
-        return waveform.squeeze(0)
+        if not os.path.exists(safetensors_path):
+            print(f"Converting {bin_path} to safetensors...")
+            state_dict = torch.load(bin_path, map_location="cpu", weights_only=True)
+            save_file(state_dict, safetensors_path)
+            print(f"Saved safetensors to: {safetensors_path}")
+
+        return str(safetensors_path)
 
     def transcribe(
         self,
         audio_path: str,
         language: Optional[str] = None,
-    ) -> TranscriptionResult:
-        """Transcribe audio file to text."""
+    ):
+        """Transcribe audio file to text using GigaAM's built-in transcribe method.
+
+        Args:
+            audio_path: Path to audio file (WAV, MP3, etc.). The model uses ffmpeg internally
+                       to load and resample the audio.
+            language: Language code (default: "ru")
+
+        Returns:
+            TranscriptionResult with text and metadata.
+        """
         self._load_model()
 
         import time
         start_time = time.time()
 
-        # Load audio (GigaAM expects 16kHz)
-        audio = self._load_audio(audio_path, target_sr=16000)
-
-        # Process with GigaAM processor
-        inputs = self._processor(
-            audio.numpy(),
-            sampling_rate=16000,
-            return_tensors="pt",
-            padding=True,
-        )
-
-        input_values = inputs.input_values.to(self._device)
-        attention_mask = inputs.attention_mask.to(self._device) if inputs.attention_mask is not None else None
-
-        # Generate transcription
+        # Use model's built-in transcribe method (handles audio loading via ffmpeg)
         with torch.no_grad():
-            logits = self._model(input_values, attention_mask=attention_mask).logits
-
-        # Decode
-        predicted_ids = torch.argmax(logits, dim=-1)
-        transcription = self._processor.batch_decode(predicted_ids)[0]
+            transcription = self._model.transcribe(audio_path)
 
         duration = time.time() - start_time
 
         return TranscriptionResult(
             text=transcription.strip(),
             language=language or "ru",
-            duration_seconds=duration,
-            confidence=None,  # GigaAM doesn't provide confidence scores
+            duration_seconds=time.time() - start_time,
+            confidence=None,
             segments=None,
         )
 
@@ -117,6 +137,6 @@ class GigaAMBackend(ASRInterface):
         self,
         audio_paths: list[str],
         language: Optional[str] = None,
-    ) -> list[TranscriptionResult]:
+    ) -> list:
         """Transcribe multiple audio files."""
         return [self.transcribe(path, language) for path in audio_paths]
