@@ -4,14 +4,6 @@ import subprocess
 from pathlib import Path
 
 
-def _validate_numeric_param(name: str, value: float, min_val: float = -100.0, max_val: float = 100.0) -> float:
-    """Validate numeric parameter for FFmpeg filter safety."""
-    if not isinstance(value, (int, float)):
-        raise TypeError(f"{name} must be numeric, got {type(value).__name__}")
-    if value < min_val or value > max_val:
-        raise ValueError(f"{name} must be between {min_val} and {max_val}, got {value}")
-    return float(value)
-
 
 def prepare_reference(
     input_path: str,
@@ -42,9 +34,6 @@ def prepare_reference(
     output_path = str(Path(output_path).resolve())
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-    # Validate numeric parameter to prevent command injection
-    normalize_peak_db = _validate_numeric_param("normalize_peak_db", normalize_peak_db, -60.0, 0.0)
 
     # Build FFmpeg filter chain
     filters = []
@@ -81,7 +70,6 @@ def prepare_reference(
         "ffmpeg", "-y",
         "-i", input_path,
         "-af", filter_str,
-        "-c:a", "pcm_s16le",
         "-ar", str(target_sample_rate) if target_sample_rate else "",
         "-ac", "1",
         output_path,
@@ -117,19 +105,14 @@ def prepare_reference_pydub(
 
     # Trim silence
     if trim_silence:
-        # Remove leading/trailing silence
         non_silent = audio.strip_silence(silence_len=500, silence_thresh=-50)
         if non_silent:
             audio = non_silent
-
-    # Noise reduction - not available in pydub, skip
-    # Would need noisereduce library
 
     # Normalize peak
     if normalize_peak_db is not None:
         audio = audio.apply_gain(normalize_peak_db - audio.max_dBFS)
 
-    # Export
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     audio.export(output_path, format="wav")
 

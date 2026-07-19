@@ -264,7 +264,7 @@ class Pipeline:
                 chapter_dir.mkdir(parents=True, exist_ok=True)
 
                 # Load QA config from config
-                qa_config = QAConfig.from_config(getattr(self.config, "qa_gate", {}))
+                _qa_cfg = QAConfig.from_config(getattr(self.config, "qa_gate", {}))
                 if not getattr(self.config, "qa_gate", {}).get("enabled", True):
                     # QA gate disabled - run without QA
                     generated_paths = self.voice_cloner.generate_batch(
@@ -280,13 +280,13 @@ class Pipeline:
                     
                     generated_paths = []
                     for i, chunk in enumerate(state.chunks):
-                        chunk_text = chunk["text"]
+                        chunk_txt = chunk["text"]
                         chunk_path = Path(state.temp_dir) / "chapters" / f"chunk_{i:04d}.wav"
                         
                         def regenerate_chunk():
                             # Regenerate single chunk
                             self.voice_cloner.generate(
-                                text=chunk_text,
+                                text=chunk_txt,
                                 voice=VoiceProfile(**state.voice_profile),
                                 output_path=str(chunk_path),
                             )

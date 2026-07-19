@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from huggingface_hub import hf_hub_download, login
+from huggingface_hub import login, hf_hub_download
 
 
 def ensure_hf_auth() -> bool:
@@ -69,7 +69,6 @@ def hf_hub_download_with_auth(
     """
     ensure_hf_auth()
 
-    from huggingface_hub import hf_hub_download
 
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
     if not token:
