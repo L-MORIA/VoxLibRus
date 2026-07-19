@@ -26,6 +26,8 @@ class TTSGenerationConfig:
     speed: float = 1.0                   # Speech speed multiplier
     temperature: float = 0.7             # Sampling temperature
     top_p: float = 0.9                   # Top-p sampling
+    # Duration control (NEW: P1-3)
+    fix_duration: Optional[float] = None  # Fixed duration in seconds (None = auto)
     # Voice-specific
     cross_fade_duration: float = 0.1     # Cross-fade between chunks (seconds)
 

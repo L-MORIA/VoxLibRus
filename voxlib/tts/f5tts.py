@@ -158,8 +158,7 @@ class F5TTSBackend(TTSInterface):
         """Get path to the model checkpoint based on variant."""
         variant = getattr(self.config, "variant", "F5TTS_v1_Base_accent_tune")
 
-		# Map variant to HF repo file
-        # Используем базовую модель F5-TTS (SWivid) — она уже может быть закеширована
+        # Map variant to HF repo file
         variant_map = {
             "F5TTS_v1_Base": "F5TTS_v1_Base/model_240000.pt",
             "F5TTS_v1_Base_accent_tune": "F5TTS_v1_Base_accent_tune/model_last.pt",
@@ -249,6 +248,7 @@ class F5TTSBackend(TTSInterface):
                 device=str(self._device),
                 speed=cfg.speed,
                 cross_fade_duration=cfg.cross_fade_duration,
+                fix_duration=cfg.fix_duration,  # NEW: P1-3 fixed duration
             )
 
         # Save
