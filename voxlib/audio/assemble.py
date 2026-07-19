@@ -58,10 +58,9 @@ def assemble_audiobook(
         subprocess.run(cmd, check=True, capture_output=True)
         return
 
-    # Multiple chunks — concat via temp file
+    # Multiple chunks — concat via filter_complex (more reliable than demuxer)
     import tempfile
     silence_path = None
-    concat_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             silence_path = f.name
@@ -73,29 +72,30 @@ def assemble_audiobook(
                        "-c:a", "pcm_s16le", silence_path]
         subprocess.run(silence_cmd, check=True, capture_output=True)
 
-        # Build concat file list
-        concat_list = []
+        # Build input list: chunk0, silence, chunk1, silence, chunk2, ...
+        interleaved = []
         for i, chunk in enumerate(chunk_files):
-            concat_list.append(f"file '{chunk}'")
+            interleaved.append(chunk)
             if i < len(chunk_files) - 1:
-                concat_list.append(f"file '{silence_path}'")
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            concat_path = f.name
-            f.write("\n".join(concat_list))
+                interleaved.append(silence_path)
 
         output_mp3 = str(Path(output_mp3).resolve())
 
-        # Merge using concat demuxer
-        merge_cmd = [
-            ffmpeg, "-y", "-f", "concat", "-safe", "0",
-            "-i", concat_path,
+        # Use filter_complex concat instead of concat demuxer
+        inputs = []
+        for f in interleaved:
+            inputs.extend(["-i", f])
+        n_inputs = len(interleaved)
+        cmd = [ffmpeg, "-y"] + inputs + [
+            "-filter_complex",
+            f"concat=n={n_inputs}:v=0:a=1[out]",
+            "-map", "[out]",
             "-c:a", "libmp3lame", "-b:a", f"{mp3_bitrate}k",
             "-map_metadata", "-1",
             "-id3v2_version", "3", "-write_id3v1", "1",
-            str(output_mp3),
+            output_mp3,
         ]
-        subprocess.run(merge_cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True)
 
         # Create M4B with chapters if requested
         if output_m4b:
@@ -111,8 +111,6 @@ def assemble_audiobook(
     finally:
         if silence_path and Path(silence_path).exists():
             Path(silence_path).unlink()
-        if concat_path and Path(concat_path).exists():
-            Path(concat_path).unlink()
 
 
 def create_m4b_with_chapters(
