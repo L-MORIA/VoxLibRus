@@ -20,6 +20,7 @@ import soundfile as sf
 
 from voxlib.asr.base import ASRInterface, TranscriptionResult
 from voxlib.config import GigaAMConfig
+from voxlib.utils.hf_auth import hf_hub_download_with_auth
 
 
 class GigaAMBackend(ASRInterface):
@@ -82,31 +83,31 @@ class GigaAMBackend(ASRInterface):
         self._model.eval()
 
     def _get_or_create_safetensors(self, repo_id: str, revision: str) -> str:
-        """Download model and convert to safetensors if needed.
+            """Download model and convert to safetensors if needed.
 
-        This avoids CVE-2025-32434 by never loading .bin with torch.load.
-        """
-        from huggingface_hub import hf_hub_download
-        from safetensors.torch import save_file
-        import torch
-
-        bin_path = hf_hub_download(
-            repo_id=repo_id,
-            filename="pytorch_model.bin",
-            revision=revision,
-        )
-
-        safetensors_path = Path(bin_path).with_suffix(".safetensors")
-
-        if not os.path.exists(safetensors_path):
-            print(f"Converting {bin_path} to safetensors...")
-            # weights_only=True prevents arbitrary code execution (CVE-2025-32434)
-            state_dict = torch.load(bin_path, map_location="cpu", weights_only=True)
+            This avoids CVE-2025-32434 by never loading .bin with torch.load.
+            Uses authenticated HF Hub download.
+            """
             from safetensors.torch import save_file
-            save_file(state_dict, safetensors_path)
-            print(f"Saved safetensors to: {safetensors_path}")
+            import torch
 
-        return str(safetensors_path)
+            bin_path = hf_hub_download_with_auth(
+                repo_id=repo_id,
+                filename="pytorch_model.bin",
+                revision=revision,
+            )
+
+            safetensors_path = Path(bin_path).with_suffix(".safetensors")
+
+            if not os.path.exists(safetensors_path):
+                print(f"Converting {bin_path} to safetensors...")
+                # weights_only=True prevents arbitrary code execution (CVE-2025-32434)
+                state_dict = torch.load(bin_path, map_location="cpu", weights_only=True)
+                from safetensors.torch import save_file
+                save_file(state_dict, safetensors_path)
+                print(f"Saved safetensors to: {safetensors_path}")
+
+            return str(safetensors_path)
 
     def _resample(self, data: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
         """Resample audio using simple interpolation (avoid scipy/torchaudio)."""
