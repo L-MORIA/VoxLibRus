@@ -11,13 +11,18 @@ def _find_ffmpeg() -> str:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg:
         return ffmpeg
-    candidate = (
-        Path.home() / "AppData/Local/Microsoft/WinGet/Packages"
-        / "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
-        / "ffmpeg-8.1-full_build/bin/ffmpeg.exe"
-    )
-    if candidate.exists():
-        return str(candidate)
+    # Lazy: only access Path.home() when actually needed
+    try:
+        candidate = (
+            Path.home() / "AppData/Local/Microsoft/WinGet/Packages"
+            / "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
+            / "ffmpeg-8.1-full_build/bin/ffmpeg.exe"
+        )
+        if candidate.exists():
+            return str(candidate)
+    except RuntimeError:
+        # Path.home() failed (no HOME/USERPROFILE)
+        pass
     return "ffmpeg"
 
 
