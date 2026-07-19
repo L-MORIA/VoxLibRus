@@ -45,9 +45,7 @@ def loudness_normalize(
         "-f", "null", "-",
     ]
 
-    result = subprocess.run(cmd_measure, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg loudnorm measure failed: {result.stderr}")
+    result = subprocess.run(cmd_measure, capture_output=True, text=True, check=True)
 
     # Parse JSON output from stderr
     json_match = re.search(r"\{.*\}", result.stderr, re.DOTALL)
@@ -75,9 +73,7 @@ def loudness_normalize(
         output_path,
     ]
 
-    result = subprocess.run(cmd_normalize, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg loudnorm normalize failed: {result.stderr}")
+    result = subprocess.run(cmd_normalize, capture_output=True, text=True, check=True)
 
     return output_path
 
@@ -107,9 +103,7 @@ def loudness_normalize_single_pass(
         output_path,
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg loudnorm failed: {result.stderr}")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     return output_path
 
@@ -128,9 +122,7 @@ def get_loudness_stats(input_path: str) -> dict:
         "-f", "null", "-",
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg loudnorm measure failed: {result.stderr}")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     json_match = re.search(r"\{.*\}", result.stderr, re.DOTALL)
     if not json_match:

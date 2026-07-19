@@ -190,6 +190,13 @@ def _convert_number(num_str: str, ordinal: bool = False, gender: str = "masculin
     try:
         from num2words import num2words as _n2w
     except ImportError:
+        import warnings
+        warnings.warn(
+            "num2words not installed; numbers will not be converted to words. "
+            "Install with: pip install num2words",
+            UserWarning,
+            stacklevel=2
+        )
         return num_str
 
     normalized = num_str.replace(",", ".")

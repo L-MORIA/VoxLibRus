@@ -2,6 +2,7 @@
 
 import subprocess
 import shutil
+import shlex
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +20,36 @@ def _find_ffmpeg() -> str:
     if candidate.exists():
         return str(candidate)
     return "ffmpeg"
+
+
+def _validate_ffmpeg_path(ffmpeg_path: str) -> str:
+    """Validate ffmpeg path to prevent command injection."""
+    if ffmpeg_path:
+        resolved = Path(ffmpeg_path).resolve()
+        if not resolved.exists():
+            raise ValueError(f"ffmpeg not found at: {ffmpeg_path}")
+        return str(resolved)
+    return _find_ffmpeg()
+
+
+def _sanitize_chapter_title(title: str) -> str:
+    """Sanitize chapter title for FFmpeg metadata (escape special chars)."""
+    if title is None:
+        return ""
+    # Escape special characters that break FFMETADATA format
+    title = title.replace("\\", "\\\\")  # backslash first
+    title = title.replace("\n", "\\n")
+    title = title.replace("\r", "\\r")
+    title = title.replace("=", "\\=")
+    title = title.replace(";", "\\;")
+    title = title.replace("#", "\\#")
+    return title
+
+
+def _generate_default_chapter_titles(count: int) -> list[str]:
+    """Generate default chapter titles if none provided."""
+    return [f"Chapter {i + 1}" for i in range(count)]
+
 
 _FFMPEG = _find_ffmpeg()
 
@@ -46,7 +77,7 @@ def assemble_audiobook(
     if not chunk_files:
         raise ValueError("No chunk files provided")
 
-    ffmpeg = ffmpeg_path or _FFMPEG
+    ffmpeg = _validate_ffmpeg_path(ffmpeg_path)
 
     # Single chunk — just convert directly
     if len(chunk_files) == 1:
@@ -139,13 +170,17 @@ def create_m4b_with_chapters(
         ffmpeg_path: Path to ffmpeg executable.
     """
     output_m4b = str(Path(output_m4b).resolve())
-    ffmpeg = ffmpeg_path or _FFMPEG
+    ffmpeg = _validate_ffmpeg_path(ffmpeg_path)
 
     # Get duration of each chunk
     durations = []
     for chunk in chapter_files or []:
         dur = get_audio_duration(chunk, ffmpeg=ffmpeg)
         durations.append(dur)
+
+    # Generate default chapter titles if none provided
+    if not chapter_titles:
+        chapter_titles = _generate_default_chapter_titles(len(chapter_files or []))
 
     # Group consecutive chunks by chapter title
     # Each group becomes one chapter marker
@@ -156,7 +191,7 @@ def create_m4b_with_chapters(
 
     for i, (title, dur) in enumerate(zip(chapter_titles or [], durations)):
         if i == 0:
-            current_group_title = title
+            current_group_title = _sanitize_chapter_title(title)
             current_group_dur = dur
             prev_title = title
             continue
@@ -167,7 +202,7 @@ def create_m4b_with_chapters(
         else:
             # Chapter boundary — save group, insert pause, start new group
             groups.append((current_group_title, current_group_dur))
-            current_group_title = title
+            current_group_title = _sanitize_chapter_title(title)
             current_group_dur = dur + chapter_pause_sec  # pause before this chapter
         prev_title = title
 
@@ -200,7 +235,7 @@ def create_m4b_with_chapters(
 
 def get_audio_duration(file_path: str, ffmpeg: str = "") -> float:
     """Get audio duration in seconds using ffprobe."""
-    ffmpeg = ffmpeg or _FFMPEG
+    ffmpeg = _validate_ffmpeg_path(ffmpeg)
     ffprobe = ffmpeg.replace("ffmpeg", "ffprobe")
     cmd = [ffprobe, "-v", "error",
            "-show_entries", "format=duration",

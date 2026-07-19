@@ -1,7 +1,17 @@
 """Audio preprocessing for reference voice audio."""
 
 import subprocess
+import shlex
 from pathlib import Path
+
+
+def _validate_numeric_param(name: str, value: float, min_val: float = -100.0, max_val: float = 100.0) -> float:
+    """Validate numeric parameter for FFmpeg filter safety."""
+    if not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be numeric, got {type(value).__name__}")
+    if value < min_val or value > max_val:
+        raise ValueError(f"{name} must be between {min_val} and {max_val}, got {value}")
+    return float(value)
 
 
 def prepare_reference(
@@ -33,6 +43,9 @@ def prepare_reference(
     output_path = str(Path(output_path).resolve())
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+    # Validate numeric parameter to prevent command injection
+    normalize_peak_db = _validate_numeric_param("normalize_peak_db", normalize_peak_db, -60.0, 0.0)
 
     # Build FFmpeg filter chain
     filters = []
@@ -75,9 +88,10 @@ def prepare_reference(
         output_path,
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg reference preprocessing failed: {result.stderr}")
+    # Filter out empty strings
+    cmd = [c for c in cmd if c]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=True)
 
     return output_path
 

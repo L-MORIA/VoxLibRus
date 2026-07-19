@@ -6,6 +6,7 @@ from typing import Optional
 from voxlib.config import Config
 from voxlib.tts.base import TTSInterface, VoiceProfile, TTSGenerationConfig
 from voxlib.tts.f5tts import F5TTSBackend
+from voxlib.tts.qwen3 import Qwen3TTSBackend
 from voxlib.asr.base import ASRInterface
 
 
@@ -37,13 +38,15 @@ class VoiceCloner:
         self._asr_backend: Optional[ASRInterface] = None
 
     def _get_tts_backend(self) -> TTSInterface:
-        """Lazy load TTS backend."""
-        if self._tts_backend is None:
-            if self.clone_config.tts_backend == "f5tts":
-                self._tts_backend = F5TTSBackend(self.config.tts.f5tts)
-            else:
-                raise ValueError(f"Unknown TTS backend: {self.clone_config.tts_backend}")
-        return self._tts_backend
+            """Lazy load TTS backend."""
+            if self._tts_backend is None:
+                if self.clone_config.tts_backend == "f5tts":
+                    self._tts_backend = F5TTSBackend(self.config.tts.f5tts)
+                elif self.clone_config.tts_backend == "qwen3":
+                    self._tts_backend = Qwen3TTSBackend(self.config.tts.qwen3)
+                else:
+                    raise ValueError(f"Unknown TTS backend: {self.clone_config.tts_backend}")
+            return self._tts_backend
 
     def _get_asr_backend(self) -> ASRInterface:
         """Lazy load ASR backend."""
