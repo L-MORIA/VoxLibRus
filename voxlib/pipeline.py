@@ -19,6 +19,7 @@ from voxlib.voice.cloner import VoiceCloner
 from voxlib.tts.base import VoiceProfile
 from voxlib.audio.normalize import loudness_normalize
 from voxlib.audio.assemble import assemble_audiobook
+from voxlib.audio.qa import check_audio_quality_with_retry, QAConfig
 
 
 @dataclass
@@ -262,11 +263,44 @@ class Pipeline:
                 chapter_dir = Path(state.temp_dir) / "chapters"
                 chapter_dir.mkdir(parents=True, exist_ok=True)
 
-                generated_paths = self.voice_cloner.generate_batch(
-                    texts=[c["text"] for c in state.chunks],
-                    voice=voice,
-                    output_dir=str(chapter_dir),
-                )
+                # Load QA config from config
+                qa_config = QAConfig.from_config(getattr(self.config, "qa_gate", {}))
+                if not getattr(self.config, "qa_gate", {}).get("enabled", True):
+                    # QA gate disabled - run without QA
+                    generated_paths = self.voice_cloner.generate_batch(
+                        texts=[c["text"] for c in state.chunks],
+                        voice=voice,
+                        output_dir=str(chapter_dir),
+                    )
+                    state.chunks_generated = [str(p) for p in generated_paths]
+                else:
+                    # Generate with QA gate and retry
+                    chunk_dir = Path(state.temp_dir) / "chapters"
+                    chunk_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    generated_paths = []
+                    for i, chunk in enumerate(state.chunks):
+                        chunk_text = chunk["text"]
+                        chunk_path = Path(state.temp_dir) / "chapters" / f"chunk_{i:04d}.wav"
+                        
+                        def regenerate_chunk():
+                            # Regenerate single chunk
+                            self.voice_cloner.generate(
+                                text=chunk_text,
+                                voice=VoiceProfile(**state.voice_profile),
+                                output_path=str(chunk_path),
+                            )
+                        
+                        result = check_audio_quality_with_retry(
+                            audio_path=str(chunk_path),
+                            config=QAConfig.from_config(getattr(self.config, "qa_gate", {})),
+                            regenerate_fn=regenerate_chunk,
+                        )
+                        if result.passed:
+                            generated_paths.append(str(chunk_path))
+                        else:
+                            state.chunks_failed.append({"id": i, "errors": result.errors})
+                
                 state.chunks_generated = [str(p) for p in generated_paths]
                 state.stages_completed.append("generate")
                 self._save_state()
