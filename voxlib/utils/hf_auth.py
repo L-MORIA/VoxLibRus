@@ -69,7 +69,6 @@ def hf_hub_download_with_auth(
     """
     ensure_hf_auth()
 
-
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
     if not token:
         for path in [
