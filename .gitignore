@@ -24,3 +24,10 @@ models/
 
 # Generated book files
 *.epub
+
+# HuggingFace hub cache (may appear in repo root via HF_HOME)
+.locks/
+models--*/
+blobs/
+snapshots/
+refs/

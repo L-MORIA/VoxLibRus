@@ -17,6 +17,66 @@ from voxlib.tts.base import TTSInterface, VoiceProfile, TTSGenerationConfig
 from voxlib.config import F5TTSConfig
 
 
+def _load_bigvgan_vocoder(device: str) -> "torch.nn.Module":
+    """Load BigVGAN v2 vocoder directly, bypassing f5_tts's broken import chain."""
+    import sys as _sys
+    import f5_tts as _f5
+    pkg_dir = Path(_f5.__path__[0])
+    bigvgan_dir = pkg_dir / "third_party" / "BigVGAN"
+    if bigvgan_dir.exists() and str(bigvgan_dir) not in _sys.path:
+        _sys.path.insert(0, str(bigvgan_dir))
+    # Now import bigvgan as a top-level module (not via third_party subpackage)
+    import bigvgan as _bigvgan
+
+    # Patch: BigVGAN's _from_pretrained requires proxies/resume_download (old API),
+    # but newer huggingface_hub doesn't provide them. Make them optional.
+    _orig_from_pretrained = _bigvgan.BigVGAN._from_pretrained
+
+    @classmethod  # type: ignore[misc]
+    def _patched_from_pretrained(
+        cls,
+        *,
+        model_id: str,
+        revision: str = "main",
+        cache_dir: Optional[str] = None,
+        force_download: bool = False,
+        proxies: Optional[dict] = None,
+        resume_download: bool = False,
+        local_files_only: bool = False,
+        token: Optional[str] = None,
+        **model_kwargs,
+    ):
+        return _orig_from_pretrained(
+            model_id=model_id,
+            revision=revision,
+            cache_dir=cache_dir or "",
+            force_download=force_download,
+            proxies=proxies,
+            resume_download=resume_download,
+            local_files_only=local_files_only,
+            token=token,
+            **model_kwargs,
+        )
+
+    _bigvgan.BigVGAN._from_pretrained = _patched_from_pretrained
+
+    vocoder = _bigvgan.BigVGAN.from_pretrained(
+        str(bigvgan_dir / "pretrained"),
+        use_cuda_kernel=False,
+    )
+    vocoder.remove_weight_norm()
+    vocoder = vocoder.eval().to(device)
+
+    # Wrap: BigVGAN uses __call__(mel), not .decode(mel) — add .decode for compat
+    _orig_forward = vocoder.forward
+
+    def _decode_wrapper(mel):
+        return _orig_forward(mel)
+
+    vocoder.decode = _decode_wrapper
+    return vocoder
+
+
 class F5TTSBackend(TTSInterface):
     """F5-TTS_RUSSIAN backend with native stress marks (+) support.
 
@@ -55,7 +115,6 @@ class F5TTSBackend(TTSInterface):
             from f5_tts.model import DiT
             from f5_tts.infer.utils_infer import (
                 load_model,
-                load_vocoder,
                 infer_process,
                 preprocess_ref_audio_text,
                 remove_silence_for_generated_wav,
@@ -79,7 +138,8 @@ class F5TTSBackend(TTSInterface):
         ckpt_path = self._get_checkpoint_path()
 
         self._model = load_model(DiT, model_cfg, ckpt_path, device=str(self._device))
-        self._vocoder = load_vocoder(device=str(self._device))
+        # BigVGAN: use our own loader (f5_tts's bigvgan import chain is broken on Windows)
+        self._vocoder = _load_bigvgan_vocoder(device=str(self._device))
         self._infer_process = infer_process
         self._preprocess_ref = preprocess_ref_audio_text
         self._remove_silence = remove_silence_for_generated_wav
