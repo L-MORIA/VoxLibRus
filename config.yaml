@@ -20,7 +20,7 @@ asr:
   gigaam:
     model_id: ai-sage/GigaAM-v3
     revision: e2e_rnnt
-    device: cpu
+    device: cuda
   whisper:
     model_id: openai/whisper-large-v3
     device: cpu
@@ -30,7 +30,7 @@ tts:
   primary: f5tts
   qwen3:
     model_id: Qwen/Qwen3-TTS-12Hz-1.7B-Base
-    device: cpu
+    device: cuda
     language: ru
     streaming: false
   f5tts:

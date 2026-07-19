@@ -1,9 +1,15 @@
 """CLI entry point for VoxLibRus."""
 
+# ruff: noqa: E402 — setup_gpu_compat() must run before voxlib imports
+
 import json
 import typer
 from pathlib import Path
 from typing import Optional
+
+# GPU / audio compatibility setup (must run before any voxlib imports)
+from voxlib.utils.setup import setup_gpu_compat
+setup_gpu_compat()
 
 from voxlib.config import Config
 from voxlib.pipeline import run_audiobook

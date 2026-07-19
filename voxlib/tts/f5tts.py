@@ -44,6 +44,13 @@ class F5TTSBackend(TTSInterface):
                 "f5-tts not installed. Run: pip install f5-tts"
             )
 
+        # Force float32 for CUDA (cuFFT fails with float16 on non-power-of-2 sizes)
+        from f5_tts.infer import utils_infer as _utils_infer
+        _orig_load_ckpt = _utils_infer.load_checkpoint
+        def _patched_ckpt(model, ckpt_path, device, dtype=None, use_ema=True):
+            return _orig_load_ckpt(model, ckpt_path, device, dtype=torch.float32, use_ema=use_ema)
+        _utils_infer.load_checkpoint = _patched_ckpt
+
         try:
             from f5_tts.model import DiT
             from f5_tts.infer.utils_infer import (
