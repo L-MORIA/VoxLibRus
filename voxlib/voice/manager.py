@@ -182,7 +182,7 @@ class VoiceProfileManager:
         if not profile_path.exists() or not wav_path.exists():
             return None
         with open(profile_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            json.load(f)  # validate JSON
         return VoiceProfile(
             name=meta.name,
             backend=meta.backend,
@@ -200,7 +200,7 @@ class VoiceProfileManager:
         """Delete a voice profile from cache."""
         if combined_hash not in self._index:
             return False
-        meta = self._index[combined_hash]
+
         (self.cache_dir / f"{combined_hash}.json").unlink(missing_ok=True)
         (self.cache_dir / f"{combined_hash}.wav").unlink(missing_ok=True)
         del self._index[combined_hash]
