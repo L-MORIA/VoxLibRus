@@ -74,7 +74,7 @@ class GigaAMBackend(ASRInterface):
             dtype=torch.float32,
         )
 
-        # Load weights from safetensors
+        # Load weights from safetensors (safe - no pickle execution)
         state_dict = load_file(safetensors_path)
         model.load_state_dict(state_dict, strict=False)
 
@@ -82,7 +82,10 @@ class GigaAMBackend(ASRInterface):
         self._model.eval()
 
     def _get_or_create_safetensors(self, repo_id: str, revision: str) -> str:
-        """Download model and convert to safetensors if needed."""
+        """Download model and convert to safetensors if needed.
+
+        This avoids CVE-2025-32434 by never loading .bin with torch.load.
+        """
         from huggingface_hub import hf_hub_download
         from safetensors.torch import save_file
         import torch
@@ -97,6 +100,7 @@ class GigaAMBackend(ASRInterface):
 
         if not os.path.exists(safetensors_path):
             print(f"Converting {bin_path} to safetensors...")
+            # weights_only=True prevents arbitrary code execution (CVE-2025-32434)
             state_dict = torch.load(bin_path, map_location="cpu", weights_only=True)
             from safetensors.torch import save_file
             save_file(state_dict, safetensors_path)

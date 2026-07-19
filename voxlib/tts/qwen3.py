@@ -8,7 +8,7 @@ Voice clone: from 3 seconds of reference audio
 
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 import torch
 import soundfile as sf
@@ -86,6 +86,9 @@ class Qwen3TTSBackend(TTSInterface):
 
         voice_name = name or f"voice_{ref_path.stem}"
 
+        # Convert prompt_items to JSON-serializable format
+        serializable_prompt = self._serialize_prompt_items(prompt_items)
+
         return VoiceProfile(
             name=voice_name,
             backend="qwen3",
@@ -94,10 +97,45 @@ class Qwen3TTSBackend(TTSInterface):
             embedding_path="",  # prompt items stored in meta
             meta={
                 "model_id": self.config.model_id,
-                "prompt_items": prompt_items,  # stored for reuse
+                "prompt_items": serializable_prompt,  # stored for reuse
                 "x_vector_only_mode": False,
             },
         )
+
+    def _serialize_prompt_items(self, prompt_items: Any) -> list:
+        """Convert model prompt_items to JSON-serializable format."""
+        if prompt_items is None:
+            return []
+        if isinstance(prompt_items, list):
+            result = []
+            for item in prompt_items:
+                if isinstance(item, torch.Tensor):
+                    result.append(item.detach().cpu().numpy().tolist())
+                elif isinstance(item, dict):
+                    result.append({k: self._serialize_prompt_items(v) for k, v in item.items()})
+                else:
+                    result.append(item)
+            return result
+        if isinstance(prompt_items, torch.Tensor):
+            return prompt_items.detach().cpu().numpy().tolist()
+        if isinstance(prompt_items, dict):
+            return {k: self._serialize_prompt_items(v) for k, v in prompt_items.items()}
+        return str(prompt_items)
+
+    def _deserialize_prompt_items(self, data: list) -> Any:
+        """Convert JSON-serializable format back to model prompt_items."""
+        if not data:
+            return None
+        import numpy as np
+        result = []
+        for item in data:
+            if isinstance(item, list):
+                result.append(torch.from_numpy(np.array(item, dtype=np.float32)))
+            elif isinstance(item, dict):
+                result.append({k: self._deserialize_prompt_items(v) for k, v in item.items()})
+            else:
+                result.append(item)
+        return result
 
     def generate(
         self,
@@ -120,21 +158,18 @@ class Qwen3TTSBackend(TTSInterface):
         cfg = config or TTSGenerationConfig()
 
         # Retrieve pre-computed prompt from voice profile
-        prompt_items = voice.meta.get("prompt_items")
-        if prompt_items is None:
+        prompt_data = voice.meta.get("prompt_items")
+        if prompt_data is None:
             raise ValueError(
                 "Voice profile missing prompt_items. Re-run clone_voice()."
             )
+        prompt_items = self._deserialize_prompt_items(prompt_data)
 
         # Process text — strip stress marks since Qwen3 doesn't support them
         processed_text = self._process_text_for_generation(text, cfg)
 
-        # Language: Qwen3 uses language codes like "ru", "en", etc.
-        # Qwen3-TTS uses language codes: "ru", "en", etc.
-        # Note: The model expects lowercase language codes like "zh", "en", "ru"
         language = self.config.language
 
-        # Qwen3 requires a prompt format - build from the stored prompt items
         with torch.no_grad():
             wavs, sample_rate = self._model.generate_voice_clone(
                 text=[processed_text],
@@ -147,7 +182,6 @@ class Qwen3TTSBackend(TTSInterface):
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # wavs is list of np.ndarrays
         audio = wavs[0]
         if isinstance(audio, torch.Tensor):
             audio = audio.detach().cpu().numpy()
@@ -175,9 +209,10 @@ class Qwen3TTSBackend(TTSInterface):
 
         cfg = config or TTSGenerationConfig()
 
-        prompt_items = voice.meta.get("prompt_items")
-        if prompt_items is None:
-            raise ValueError("Voice profile missing prompt_items.")
+        prompt_data = voice.meta.get("prompt_items")
+        if prompt_data is None:
+            raise ValueError("Voice profile missing prompt_items. Re-run clone_voice().")
+        prompt_items = self._deserialize_prompt_items(prompt_data)
 
         # Process texts — strip stress marks
         processed_texts = []
@@ -186,7 +221,6 @@ class Qwen3TTSBackend(TTSInterface):
 
         language = self.config.language
 
-        # Generate all texts in batch using the same voice prompt
         with torch.no_grad():
             wavs, sample_rate = self._model.generate_voice_clone(
                 text=processed_texts,
@@ -206,6 +240,7 @@ class Qwen3TTSBackend(TTSInterface):
                 audio = audio.detach().cpu().numpy()
             if audio.ndim > 1:
                 audio = audio.squeeze()
+
             sf.write(str(output_path), audio, int(sample_rate))
             results.append(output_path)
 
@@ -218,6 +253,5 @@ class Qwen3TTSBackend(TTSInterface):
         """
         if config.apply_stress_marks:
             # Qwen3 doesn't understand '+' stress marks
-            # Strip them to avoid garbled pronunciation
             return text.replace("+", "")
         return text.replace("+", "")
