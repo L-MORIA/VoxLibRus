@@ -87,4 +87,4 @@ def apply_patch():
     if hasattr(_ta, "transforms"):
         _ta.transforms.Resample = _PatchedResample
 
-    print("[torchaudio_shim] torchaudio patched: load→soundfile, Resample→polyphase")
+    print("[torchaudio_shim] torchaudio patched: load->soundfile, Resample->polyphase")

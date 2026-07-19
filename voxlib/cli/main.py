@@ -29,6 +29,33 @@ def _load_config(config_path: Optional[Path]) -> Config:
     return Config.from_yaml()
 
 
+def _parse_chapter_range(range_str: str) -> list[int]:
+    """Parse chapter range string like '1-5,7,10-12' into list of chapter numbers (1-indexed)."""
+    chapters = set()
+    for part in range_str.split(","):
+        part = part.strip()
+        if "-" in part:
+            start, end = map(int, part.split("-"))
+            chapters.update(range(start, end + 1))
+        else:
+            chapters.add(int(part))
+    return sorted(chapters)
+
+
+def _filter_chapters(chapters: dict, chapter_range: Optional[list[int]]) -> dict:
+    """Filter chapters by 1-indexed chapter numbers."""
+    if chapter_range is None:
+        return chapters
+    return {title: text for i, (title, text) in enumerate(chapters.items(), 1) if i in chapter_range}
+
+
+def _parse_skip_stages(skip_str: str) -> set[str]:
+    """Parse skip stages string like 'extract,clean,accents' into set."""
+    if not skip_str:
+        return set()
+    return {s.strip() for s in skip_str.split(",") if s.strip()}
+
+
 @app.command()
 def run(
     book: Path = typer.Option(..., "--book", help="Path to book (PDF/EPUB/DOCX)"),
@@ -36,13 +63,56 @@ def run(
     output: str = typer.Option("audiobook", "--output", help="Output name (without extension)"),
     config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
     force_restart: bool = typer.Option(False, "--force", help="Ignore existing pipeline state"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be done without executing"),
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="Verbose/debug logging"),
+    workers: int = typer.Option(0, "--workers", help="Number of parallel workers (0 = sequential)"),
+    skip_stages: str = typer.Option("", "--skip-stages", help="Comma-separated stages to skip: extract,clean,accents,clone,generate,normalize,assemble"),
+    resume: bool = typer.Option(False, "--resume", help="Resume from last saved state"),
+    chapters: str = typer.Option("", "--chapters", help="Chapter range like '1-5,7,10-12'"),
 ):
     """Full pipeline: extract → transcribe → clone → generate → assemble."""
-    _load_config(config)
+    config_obj = _load_config(config)
+
+    # Setup verbose logging
+    if verbose:
+        import logging
+        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+    # Parse chapter range
+    chapter_list = _parse_chapter_range(chapters) if chapters else None
+
+    # Parse skip stages
+    skip_stages_set = _parse_skip_stages(skip_stages)
+    valid_stages = {"extract", "clean", "accents", "chunk", "clone", "generate", "normalize", "assemble"}
+    invalid = skip_stages_set - valid_stages
+    if invalid:
+        typer.echo(f"❌ Invalid stages: {', '.join(invalid)}. Valid: {', '.join(sorted(valid_stages))}", err=True)
+        raise typer.Exit(1)
+
+    # Dry run mode
+    if dry_run:
+        typer.echo("🔍 DRY RUN MODE - showing what would be done:")
+        typer.echo(f"  📖 Book: {book}")
+        typer.echo(f"  🎤 Reference: {reference}")
+        typer.echo(f"  🔊 Output: {output}")
+        typer.echo(f"  ⚙️  Config: {config or 'default'}")
+        typer.echo(f"  🎭 Voice: {output}")
+        typer.echo(f"  📚 Chapters: {chapters or 'all'}")
+        typer.echo(f"  ⏭️  Skip stages: {skip_stages or 'none'}")
+        typer.echo(f"  🔄 Resume: {resume}")
+        typer.echo(f"  👥 Workers: {workers if workers > 0 else 'sequential'}")
+        typer.echo(f"  🚫 Force restart: {force_restart}")
+        raise typer.Exit(0)
+
     typer.echo(f"📖 Book: {book}")
     typer.echo(f"🎤 Reference: {reference}")
     typer.echo(f"🔊 Output: {output}")
     typer.echo(f"⚙️  Config: {config or 'default'}")
+    if verbose:
+        typer.echo(f"  Chapters: {chapters or 'all'}")
+        typer.echo(f"  Skip: {skip_stages or 'none'}")
+        typer.echo(f"  Resume: {resume}")
+        typer.echo(f"  Workers: {workers if workers > 0 else 'sequential'}")
 
     result = run_audiobook(
         book_path=str(book),
@@ -64,12 +134,20 @@ def extract(
     book: Path = typer.Option(..., "--book", help="Path to book"),
     output: Path = typer.Option("chunks.json", "--output", "-o", help="Output JSON file"),
     config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+    chapters: str = typer.Option("", "--chapters", help="Chapter range like '1-5,7,10-12'"),
 ):
     """Extract and chunk text from a book (PDF/EPUB/DOCX)."""
-    _load_config(config)
+    config_obj = _load_config(config)
     typer.echo(f"📖 Extracting: {book} → {output}")
 
     chapters = extract_text(str(book))
+
+    # Filter chapters if range specified
+    chapter_list = _parse_chapter_range(chapters) if chapters else None
+    if chapter_list:
+        chapters = _filter_chapters(chapters, chapter_list)
+        typer.echo(f"Filtered to chapters: {chapter_list}")
+
     typer.echo(f"Found {len(chapters)} chapters")
 
     # Clean text
@@ -206,6 +284,58 @@ def assemble(
     # Cleanup: remove intermediate MP3 if user requested M4B only
     if format == "m4b" and Path(output_mp3).exists():
         Path(output_mp3).unlink()
+
+
+@app.command()
+def list_voices(
+    config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+):
+    """List available voice profiles."""
+    config_obj = _load_config(config)
+    cloner = VoiceCloner(config_obj)
+    profiles_dir = Path(config_obj.voice.profiles_dir).expanduser()
+
+    if not profiles_dir.exists():
+        typer.echo("No voice profiles found")
+        return
+
+    typer.echo("Available voice profiles:")
+    for profile_file in sorted(profiles_dir.glob("*.json")):
+        import json
+        with open(profile_file) as f:
+            data = json.load(f)
+        typer.echo(f"  • {data.get('name', profile_file.stem)} ({data.get('backend', 'unknown')})")
+
+
+@app.command()
+def delete_voice(
+    name: str = typer.Option(..., "--name", help="Voice profile name to delete"),
+    config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+    force: bool = typer.Option(False, "--force", help="Skip confirmation"),
+):
+    """Delete a voice profile."""
+    config_obj = _load_config(config)
+    cloner = VoiceCloner(config_obj)
+
+    # VoiceCloner manages profiles - need to implement delete
+    # For now, just remove the JSON and WAV files
+    profiles_dir = Path(config_obj.voice.profiles_dir).expanduser()
+    json_path = profiles_dir / f"{name}.json"
+    wav_path = profiles_dir / f"{name}_ref.wav"
+
+    if not json_path.exists():
+        typer.echo(f"❌ Voice profile '{name}' not found")
+        raise typer.Exit(1)
+
+    if not force:
+        confirm = typer.confirm(f"Delete voice profile '{name}'?")
+        if not confirm:
+            typer.echo("Cancelled")
+            raise typer.Exit(0)
+
+    json_path.unlink(missing_ok=True)
+    wav_path.unlink(missing_ok=True)
+    typer.echo(f"✅ Deleted voice profile '{name}'")
 
 
 if __name__ == "__main__":
