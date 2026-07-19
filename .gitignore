@@ -14,4 +14,10 @@ temp/
 *.mp3
 *.m4b
 *.onnx
+*.pt
+*.safetensors
+*.bin
 .DS_Store
+
+# Large model weights (keep on F: drive)
+models/

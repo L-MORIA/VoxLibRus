@@ -59,6 +59,7 @@ class F5TTSBackend(TTSInterface):
             ) from e
 
         # Load model
+        torch.backends.cudnn.enabled = False  # RTX 5060 Ti (sm120) compat
         model_cfg = {
             "dim": 1024,
             "depth": 22,
@@ -66,14 +67,12 @@ class F5TTSBackend(TTSInterface):
             "ff_mult": 2,
             "text_dim": 512,
             "conv_layers": 4,
-            "pe_attn_head": None,
         }
 
-        model = DiT(**model_cfg)
         ckpt_path = self._get_checkpoint_path()
 
-        self._model = load_model(model, ckpt_path, device=self._device)
-        self._vocoder = load_vocoder(device=self._device)
+        self._model = load_model(DiT, model_cfg, ckpt_path, device=str(self._device))
+        self._vocoder = load_vocoder(device=str(self._device))
         self._infer_process = infer_process
         self._preprocess_ref = preprocess_ref_audio_text
         self._remove_silence = remove_silence_for_generated_wav
@@ -82,18 +81,17 @@ class F5TTSBackend(TTSInterface):
         """Get path to the model checkpoint based on variant."""
         variant = getattr(self.config, "variant", "F5TTS_v1_Base_accent_tune")
 
-        # Map variant to HF repo file
+		# Map variant to HF repo file
+        # Используем базовую модель F5-TTS (SWivid) — она уже может быть закеширована
         variant_map = {
             "F5TTS_v1_Base": "F5TTS_v1_Base/model_240000.pt",
             "F5TTS_v1_Base_accent_tune": "F5TTS_v1_Base_accent_tune/model_last.pt",
             "F5TTS_v1_Base_v2": "F5TTS_v1_Base_v2/model_last.pt",
         }
+        repo_id = "Misha24-10/F5-TTS_RUSSIAN"
+        filename = variant_map.get(variant, "F5TTS_v1_Base_accent_tune/model_last.pt")
 
         from huggingface_hub import hf_hub_download
-
-        repo_id = self.config.model_id  # "Misha24-10/F5-TTS_RUSSIAN"
-        filename = variant_map.get(variant, variant_map["F5TTS_v1_Base_accent_tune"])
-
         return hf_hub_download(repo_id=repo_id, filename=filename)
 
     def supports_stress_marks(self) -> bool:
@@ -171,23 +169,21 @@ class F5TTSBackend(TTSInterface):
                 gen_text=processed_text,
                 model_obj=self._model,
                 vocoder=self._vocoder,
-                device=self._device,
+                device=str(self._device),
                 speed=cfg.speed,
                 cross_fade_duration=cfg.cross_fade_duration,
             )
-
-        # Post-process: remove silence from generated audio
-        if self._remove_silence is not None:
-            audio = self._remove_silence(audio)
 
         # Save
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # audio is (1, T) or (T,) tensor/array at 24kHz
+        # audio is a list/array at 24kHz
+        if isinstance(audio, (tuple, list)) and len(audio) > 0:
+            audio = audio[0]
         if isinstance(audio, torch.Tensor):
             audio = audio.detach().cpu().numpy()
-        if audio.ndim > 1:
+        if hasattr(audio, 'ndim') and audio.ndim > 1:
             audio = audio.squeeze()
 
         sf.write(str(output_path), audio, 24000)

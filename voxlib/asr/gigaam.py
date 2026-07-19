@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Optional
 
 import torch
-import torchaudio
+import numpy as np
+import soundfile as sf
 
 from voxlib.asr.base import ASRInterface, TranscriptionResult
 from voxlib.config import GigaAMConfig
@@ -40,6 +41,8 @@ class GigaAMBackend(ASRInterface):
         """Lazy load GigaAM-v3 model from local safetensors."""
         if self._model is not None:
             return
+
+        torch.backends.cudnn.enabled = False  # RTX 5060 Ti (sm120) compat
 
         try:
             from transformers import AutoModel, AutoConfig
@@ -84,7 +87,6 @@ class GigaAMBackend(ASRInterface):
         from safetensors.torch import save_file
         import torch
 
-        # Get the cached bin file path
         bin_path = hf_hub_download(
             repo_id=repo_id,
             filename="pytorch_model.bin",
@@ -102,35 +104,32 @@ class GigaAMBackend(ASRInterface):
 
         return str(safetensors_path)
 
+    def _resample(self, data: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
+        """Resample audio using simple interpolation (avoid scipy/torchaudio)."""
+        if orig_sr == target_sr:
+            return data
+        duration = len(data) / orig_sr
+        target_len = int(duration * target_sr)
+        # Linear interpolation
+        indices = np.linspace(0, len(data) - 1, target_len)
+        return np.interp(indices, np.arange(len(data)), data).astype(np.float32)
+
     def transcribe(
         self,
         audio_path: str,
         language: Optional[str] = None,
     ):
-        """Transcribe audio file to text using GigaAM's built-in transcribe method.
-
-        For files longer than 25 seconds, automatically chunks into segments
-        and concatenates results.
-
-        Args:
-            audio_path: Path to audio file (WAV, MP3, etc.). The model uses ffmpeg internally
-                       to load and resample the audio.
-            language: Language code (default: "ru")
-
-        Returns:
-            TranscriptionResult with text and metadata.
-        """
+        """Transcribe audio file to text using GigaAM's built-in transcribe method."""
         self._load_model()
 
         import time
-
         start_time = time.time()
 
-        # Check audio duration
-        info = torchaudio.info(audio_path)
-        duration = info.num_frames / info.sample_rate
+        # Check audio duration via soundfile
+        snd = sf.SoundFile(audio_path)
+        duration = snd.frames / snd.samplerate
 
-        # If short enough, transcribe directly
+        # If short enough, transcribe directly (model uses ffmpeg internally)
         if duration <= self.MAX_DURATION_SECONDS:
             with torch.no_grad():
                 transcription = self._model.transcribe(audio_path)
@@ -143,10 +142,32 @@ class GigaAMBackend(ASRInterface):
                 segments=None,
             )
 
-        # Long audio: chunk and transcribe
+        # Long audio: chunk via soundfile + numpy
         print(f"Audio duration: {duration:.1f}s, splitting into chunks...")
 
-        chunk_files = self._chunk_audio(audio_path, max_duration=self.MAX_DURATION_SECONDS)
+        data, sr = sf.read(audio_path)
+        if data.ndim > 1:
+            data = data.mean(axis=1)  # mono
+        data = self._resample(data, sr, 16000)
+
+        chunk_files = []
+        chunk_samples = int(self.MAX_DURATION_SECONDS * 16000)
+        overlap = int(0.5 * 16000)
+
+        start = 0
+        while start < len(data):
+            end = min(start + chunk_samples, len(data))
+            chunk = data[start:end]
+
+            if len(chunk) < 16000 * 0.5:
+                break
+
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                chunk_path = tmp.name
+            sf.write(chunk_path, chunk, 16000)
+            chunk_files.append(chunk_path)
+
+            start += chunk_samples - overlap
 
         print(f"Split into {len(chunk_files)} chunks")
 
@@ -156,10 +177,8 @@ class GigaAMBackend(ASRInterface):
             with torch.no_grad():
                 chunk_text = self._model.transcribe(chunk_path)
             transcriptions.append(chunk_text.strip())
-            # Clean up temp chunk file
             os.unlink(chunk_path)
 
-        # Concatenate transcriptions
         full_text = " ".join(transcriptions)
 
         return TranscriptionResult(
@@ -170,48 +189,6 @@ class GigaAMBackend(ASRInterface):
             segments=None,
         )
 
-    def _chunk_audio(self, audio_path: str, max_duration: float) -> list:
-        """Split audio file into chunks of max_duration seconds.
-
-        Returns list of paths to temporary WAV chunk files.
-        """
-        # Load audio
-        waveform, sample_rate = torchaudio.load(audio_path)
-
-        # Convert to mono
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-
-        # Resample to 16kHz if needed
-        target_sr = 16000
-        if sample_rate != target_sr:
-            resampler = torchaudio.transforms.Resample(sample_rate, target_sr)
-            waveform = resampler(waveform)
-            sample_rate = target_sr
-
-        chunk_files = []
-
-        start = 0
-        overlap_samples = int(0.5 * 16000)  # 0.5s overlap
-
-        while start < waveform.shape[1]:
-            end = min(start + int(max_duration * 16000), waveform.shape[1])
-            chunk = waveform[:, start:end]
-
-            if chunk.shape[1] < 16000 * 0.5:  # Skip very short chunks
-                break
-
-            # Save chunk to temp file
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                chunk_path = tmp.name
-
-            torchaudio.save(chunk_path, chunk, 16000)
-            chunk_files.append(chunk_path)
-
-            start += int(max_duration * 16000) - overlap_samples
-
-        return chunk_files
-
     def transcribe_batch(
         self,
         audio_paths: list[str],
@@ -219,4 +196,3 @@ class GigaAMBackend(ASRInterface):
     ) -> list:
         """Transcribe multiple audio files."""
         return [self.transcribe(path, language) for path in audio_paths]
-

@@ -20,7 +20,7 @@ asr:
   gigaam:
     model_id: ai-sage/GigaAM-v3
     revision: e2e_rnnt
-    device: cpu           # RTX 5060 Ti (sm120) — нужен PyTorch 2.6+
+    device: cpu
   whisper:
     model_id: openai/whisper-large-v3
     device: cpu
