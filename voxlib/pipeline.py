@@ -44,6 +44,13 @@ class PipelineState:
     final_mp3: Optional[str] = None
     final_m4b: Optional[str] = None
 
+    # Dynamic fields (filled during pipeline stages)
+    chapters: Optional[dict] = None
+    cleaned_chapters: Optional[dict] = None
+    accented_chapters: Optional[dict] = None
+    chunks: Optional[list] = None
+    normalized_chunks: Optional[list] = None
+
     def to_json(self) -> str:
         return json.dumps(self.__dict__, ensure_ascii=False, indent=2)
 

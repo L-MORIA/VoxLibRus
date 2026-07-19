@@ -65,19 +65,23 @@ def assemble_audiobook(
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             silence_path = f.name
 
-        # Generate silence
+        # Generate silence for chapter boundaries
         silence_cmd = [ffmpeg, "-y", "-f", "lavfi",
                        "-i", "anullsrc=r=24000:cl=mono",
                        "-t", str(chapter_pause_sec),
                        "-c:a", "pcm_s16le", silence_path]
         subprocess.run(silence_cmd, check=True, capture_output=True)
 
-        # Build input list: chunk0, silence, chunk1, silence, chunk2, ...
+        # Build interleaved list: insert silence ONLY at chapter boundaries
         interleaved = []
+        prev_title = None
         for i, chunk in enumerate(chunk_files):
-            interleaved.append(chunk)
-            if i < len(chunk_files) - 1:
+            current_title = chapter_titles[i] if chapter_titles else None
+            # Insert silence BEFORE chunk if this is a new chapter (not the first)
+            if prev_title is not None and current_title != prev_title:
                 interleaved.append(silence_path)
+            interleaved.append(chunk)
+            prev_title = current_title
 
         output_mp3 = str(Path(output_mp3).resolve())
 

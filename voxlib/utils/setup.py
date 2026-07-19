@@ -57,26 +57,30 @@ def pick_device(config_device: str, vram_gb: int = 16) -> str:
 def setup_gpu_compat():
     """Apply GPU and audio compatibility patches.
 
-    1. Disable cuDNN (no sm_120 kernels in PyTorch 2.12)
-    2. Patch torch.stft for float16 → float32
-    3. Patch torchaudio (soundfile backend instead of torchcodec)
+    1. Disable cuDNN (only on sm_120 Blackwell — no kernels in PyTorch 2.12)
+    2. Patch torch.stft for float16 → float32 (only on sm_120)
+    3. Patch torchaudio (soundfile backend instead of torchcodec — always on Windows)
+
+    On CUDA-capable cards with full toolchain support (sm_70–sm_90),
+    cuDNN and float16 STFT work normally — no hacks applied.
     """
-    # cuDNN: no sm_120 kernels in PyTorch 2.12
-    torch.backends.cudnn.enabled = False
-    torch.backends.cudnn.benchmark = False
-
-    # STFT: convert float16 to float32 globally
-    _patch_torch_stft()
-
-    # Torchaudio → soundfile (no FFmpeg DLLs)
-    from voxlib.utils.torchaudio_shim import apply_patch
-
-    apply_patch()
-
-    # Announce GPU status
     if torch.cuda.is_available():
         name = torch.cuda.get_device_name(0)
         vram = torch.cuda.get_device_properties(0).total_memory / 1e9
-        print(f"[GPU] {name} — {vram:.0f} GB VRAM (cuDNN off, float32 STFT)")
-    else:
-        print("[GPU] CUDA not available — using CPU")
+        caps = torch.cuda.get_device_capability(0)
+        is_blackwell = caps >= (12, 0)
+        print(f"[GPU] {name} — {vram:.0f} GB VRAM (sm_{caps[0]}{caps[1]}, Blackwell={is_blackwell})")
+
+        if is_blackwell:
+            # Blackwell (sm_120): no cuDNN kernels, float16 STFT broken
+            torch.backends.cudnn.enabled = False
+            torch.backends.cudnn.benchmark = False
+            _patch_torch_stft()
+            print("[GPU] cuDNN off, float32 STFT patched (Blackwell compat)")
+        else:
+            # Full hardware support — keep defaults
+            pass
+
+    # Torchaudio → soundfile (always on Windows — avoids FFmpeg DLL issues)
+    from voxlib.utils.torchaudio_shim import apply_patch
+    apply_patch()

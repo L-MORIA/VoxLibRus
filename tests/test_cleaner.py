@@ -142,10 +142,10 @@ class TestNormalizeNumbers:
         assert 'пятый' in result
 
     def test_ordinal_24(self):
-        """24-е → двадцать четвёртое (num2words returns masculine form)"""
+        """24-е → двадцать четвёртое (neuter nominative)"""
         result = normalize_numbers('24-е летие')
-        # num2words ordinal returns masculine form "двадцать четвёртый"
-        assert 'двадцать четвёртый' in result or 'двадцать четыре' in result
+        assert 'двадцать четвёртое' in result
+        assert 'двадцать четвёртый' not in result
 
     def test_year(self):
         """1990 г. → одна тысяча девятьсот девяносто год"""

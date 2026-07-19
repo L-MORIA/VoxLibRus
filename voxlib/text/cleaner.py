@@ -169,15 +169,24 @@ def expand_abbreviations(text: str) -> str:
 
 # Pattern for numbers with optional ordinal suffixes, percentages, currency
 _NUM_RE = re.compile(r'-?\d+(?:[.,]\d+)?')
-_ORDINAL_RE = re.compile(r'-?\d+(?:[.,]\d+)?[-–](?:й|я|е|е|и|а|о|у|ю|ы|ь|ъ)(?=[\s.,!?;:)]|$)')
+# Pattern for ordinals with suffixes (5-й, 21-я, 5-е, 3-м, 90-х, 21-го, 5-му)
+_ORDINAL_RE = re.compile(r'-?\d+(?:[.,]\d+)?[-–](?:[йяеиаоуыь]|[мх]|[гр][оу]?)\b')
 _PERCENT_RE = re.compile(r'-?\d+(?:[.,]\d+)?\s*%')
 _CURRENCY_RE = re.compile(r'[₽$€£¥]\s*-?\d+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?\s*[₽$€£¥]')
-# Year pattern: 4-digit year possibly with "г." or "гг."
-_YEAR_RE = re.compile(r'\b(1\d{3}|20\d{2})\s*(?:г\.?|гг\.?)?\b')
+# Year pattern: 4-digit year with optional "г." / "гг." (dot is mandatory)
+_YEAR_RE = re.compile(r'\b(1\d{3}|20\d{2})\s*(?:г\.|гг\.)?\b(?!\w)')
 
 
-def _convert_number(num_str: str, ordinal: bool = False) -> str:
-    """Convert number string to Russian words."""
+def _convert_number(num_str: str, ordinal: bool = False, gender: str = "masculine", case: str = "nominative") -> str:
+    """Convert number string to Russian words.
+
+    Args:
+        num_str: Number string to convert.
+        ordinal: If True, output ordinal form.
+        gender: Grammatical gender (masculine/feminine/neuter).
+        case: Grammatical case (nominative/genitive/dative/accusative/
+              instrumental/prepositional).
+    """
     try:
         from num2words import num2words as _n2w
     except ImportError:
@@ -193,7 +202,7 @@ def _convert_number(num_str: str, ordinal: bool = False) -> str:
     try:
         if is_int:
             if ordinal:
-                return _n2w(int(num), lang="ru", ordinal=True)
+                return _n2w(int(num), lang="ru", ordinal=True, gender=gender, case=case)
             return _n2w(int(num), lang="ru")
         else:
             return _n2w(num, lang="ru")
@@ -236,9 +245,34 @@ def _replace_currency(m: re.Match) -> str:
 
 
 def _replace_ordinal(m: re.Match) -> str:
-    """Replace '5-й' → 'пятый'."""
-    num_str = re.sub(r'[-–](?:й|я|е|е|и|а|о|у|ю|ы|ь|ъ)', '', m.group(0))
-    return _convert_number(num_str, ordinal=True)
+    """Replace '5-й' → 'пятый', '21-я' → 'двадцать первая', '3-м' → 'третьим'."""
+    full = m.group(0)
+    # Extract suffix after hyphen: "5-й" → "й", "21-го" → "го"
+    suffix = full.split('-')[-1] if '-' in full else full.split('–')[-1]
+    # Number part before hyphen
+    num_str = full[:-(len(suffix) + 1)]
+
+    # Map suffix to (gender, case) for num2words
+    # Common Russian ordinal suffixes
+    _SUFFIX_MAP = {
+        'й': ('masculine', 'nominative'),
+        'я': ('feminine', 'nominative'),
+        'е': ('neuter', 'nominative'),
+        'м': ('masculine', 'prepositional'),   # 3-м → третьим
+        'х': ('plural', 'prepositional'),       # 90-х → девяностых
+        'го': ('masculine', 'genitive'),        # 21-го → двадцать первого
+        'му': ('masculine', 'dative'),          # 5-му → пятому
+        # Fallback for uncommon suffixes
+        'и': ('plural', 'nominative'),
+        'ы': ('plural', 'nominative'),
+        'о': ('neuter', 'nominative'),
+        'у': ('masculine', 'dative'),
+        'ю': ('feminine', 'accusative'),
+        'а': ('masculine', 'genitive'),
+        'ь': ('feminine', 'nominative'),
+    }
+    gender, case = _SUFFIX_MAP.get(suffix, ('masculine', 'nominative'))
+    return _convert_number(num_str, ordinal=True, gender=gender, case=case)
 
 
 def _replace_year(m: re.Match) -> str:

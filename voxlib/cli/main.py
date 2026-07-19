@@ -50,6 +50,7 @@ def run(
         voice_ref_text=None,  # will be transcribed
         voice_name=output,
         force_restart=force_restart,
+        config_path=str(config) if config else None,
     )
 
     typer.echo("\n✅ Done!")
@@ -104,9 +105,9 @@ def transcribe(
     typer.echo(f"🎤 Transcribing: {audio} → {output} (backend={backend})")
 
     # Select backend
-    if backend == "gigaam" or (backend == "auto" and "gigaam" in str(config_obj.asr.gigaam.model_id).lower()):
+    if backend == "gigaam" or (backend == "auto" and config_obj.asr.primary == "gigaam"):
         asr_backend = GigaAMBackend(config_obj.asr.gigaam)
-    elif backend == "whisper" or backend == "auto":
+    elif backend == "whisper" or (backend == "auto" and config_obj.asr.primary == "whisper"):
         asr_backend = WhisperBackend(config_obj.asr.whisper)
     else:
         raise ValueError(f"Unknown backend: {backend}")
@@ -186,11 +187,9 @@ def assemble(
 
     typer.echo(f"Found {len(chapter_files)} chapters")
 
-    output_mp3 = None
+    # Always compute intermediate MP3 (needed for M4B conversion too)
+    output_mp3 = f"{output}.mp3"
     output_m4b = None
-
-    if format in ("mp3", "both"):
-        output_mp3 = f"{output}.mp3"
     if format in ("m4b", "both"):
         output_m4b = f"{output}.m4b"
 
