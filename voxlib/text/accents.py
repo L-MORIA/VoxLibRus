@@ -45,8 +45,8 @@ def _load_accentizer(timeout: float = 8.0) -> bool:
         try:
             from ruaccent import RUAccent
             acc = RUAccent()
-            # Try tiny mode first (fast, CPU, ~50MB model)
-            acc.load(omograph_model_size="tiny", use_dictionary=False, device="CPU")
+            # Try turbo3.1 first (CPU, ~150MB model, best prose quality)
+            acc.load(omograph_model_size="turbo3.1", use_dictionary=False, device="CPU")
             result[0] = True
             result.append(acc)  # Store accentizer in result[1]
         except Exception as e:
