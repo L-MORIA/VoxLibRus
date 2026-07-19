@@ -1,7 +1,6 @@
 """Audio preprocessing for reference voice audio."""
 
 import subprocess
-import shlex
 from pathlib import Path
 
 
@@ -91,7 +90,7 @@ def prepare_reference(
     # Filter out empty strings
     cmd = [c for c in cmd if c]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=True)
+    subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=True)
 
     return output_path
 
