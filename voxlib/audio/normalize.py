@@ -180,7 +180,7 @@ def loudness_normalize_single_pass(
         output_path,
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     return output_path
 
