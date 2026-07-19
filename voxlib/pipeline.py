@@ -98,24 +98,24 @@ class Pipeline:
             self._resume(resume_from)
 
     def _resume(self, resume_path: str):
-            """Load state from previous run."""
-            path = Path(resume_path)
-            if not path.exists():
-                raise FileNotFoundError(f"Resume state not found: {resume_path}")
+        """Load state from previous run."""
+        path = Path(resume_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Resume state not found: {resume_path}")
 
-            self.state = PipelineState.load(path)
+        self.state = PipelineState.load(path)
         
-            # Verify book hasn't changed
-            current_hash = self._compute_book_hash(Path(self.state.book_path))
-            if current_hash != self.state.book_hash:
-                raise ValueError(
-                    f"Book file has changed since last run (hash mismatch). "
-                    f"Expected: {self.state.book_hash[:16]}..., got: {current_hash[:16]}... "
-                    f"Use --force to restart from scratch."
-                )
+        # Verify book hasn't changed
+        current_hash = self._compute_book_hash(Path(self.state.book_path))
+        if current_hash != self.state.book_hash:
+            raise ValueError(
+                f"Book file has changed since last run (hash mismatch). "
+                f"Expected: {self.state.book_hash[:16]}..., got: {current_hash[:16]}... "
+                f"Use --force to restart from scratch."
+            )
         
-            print(f"Resumed from state: {path}")
-            print(f"Completed stages: {self.state.stages_completed}")
+        print(f"Resumed from state: {path}")
+        print(f"Completed stages: {self.state.stages_completed}")
 
     def _compute_book_hash(self, book_path: Path) -> str:
         """Compute SHA256 hash of book file for resume safety."""
@@ -126,22 +126,22 @@ class Pipeline:
         return hasher.hexdigest()
 
     def _create_state(self, book_path: str, voice_name: str) -> PipelineState:
-            """Create initial pipeline state."""
-            book_path = Path(book_path)
-            output_dir = Path(self.config.project.output_dir) / book_path.stem
-            temp_dir = Path(self.config.project.temp_dir) / book_path.stem
+        """Create initial pipeline state."""
+        book_path = Path(book_path)
+        output_dir = Path(self.config.project.output_dir) / book_path.stem
+        temp_dir = Path(self.config.project.temp_dir) / book_path.stem
 
-            # Compute book hash for resume safety
-            book_hash = self._compute_book_hash(book_path)
+        # Compute book hash for resume safety
+        book_hash = self._compute_book_hash(book_path)
 
-            return PipelineState(
-                book_path=str(book_path),
-                book_name=book_path.stem,
-                output_dir=str(output_dir),
-                temp_dir=str(temp_dir),
-                voice_name=voice_name,
-                book_hash=book_hash,
-            )
+        return PipelineState(
+            book_path=str(book_path),
+            book_name=book_path.stem,
+            output_dir=str(output_dir),
+            temp_dir=str(temp_dir),
+            voice_name=voice_name,
+            book_hash=book_hash,
+        )
 
     def _save_state(self):
         """Persist state to disk."""
@@ -236,12 +236,20 @@ class Pipeline:
                     ref_text=state.voice_ref_text,
                     name=state.voice_name,
                 )
+                # Serialize prompt_items for JSON storage if Qwen3 backend
+                meta = voice_profile.meta.copy()
+                if voice_profile.backend == "qwen3" and "prompt_items" in meta:
+                    # Get Qwen3 backend to use its serializer
+                    tts_backend = self.voice_cloner._get_tts_backend()
+                    if hasattr(tts_backend, '_serialize_prompt_items'):
+                        meta["prompt_items"] = tts_backend._serialize_prompt_items(meta["prompt_items"])
+                
                 state.voice_profile = {
                     "name": voice_profile.name,
                     "backend": voice_profile.backend,
                     "ref_audio": voice_profile.ref_audio,
                     "ref_text": voice_profile.ref_text,
-                    "meta": voice_profile.meta,
+                    "meta": meta,
                 }
                 state.stages_completed.append("clone")
                 self._save_state()
