@@ -1,4 +1,4 @@
-"""Voice profile management with hash-based caching for VoxLibRus."""
+"""Voice profile management with hash-based deduplication for VoxLibRus."""
 
 import hashlib
 import json
@@ -133,9 +133,10 @@ class VoiceProfileManager:
     ) -> str:
         """Save voice profile to cache. Returns combined hash."""
         from voxlib.audio.preprocess import prepare_reference
+        from voxlib.audio.preprocess import prepare_reference
         import soundfile as sf
 
-        # Compute hashes
+        # Compute combined hash
         combined_hash = self._compute_combined_hash(profile.ref_audio, profile.ref_text)
 
         # Copy reference audio to cache
@@ -157,9 +158,9 @@ class VoiceProfileManager:
             combined_hash=combined_hash,
             created_at=datetime.utcnow().isoformat() + "Z",
             backend_version="1.0",
-            original_audio=profile.meta.get("original_audio", ""),
+            original_audio=profile.ref_audio,
             original_text=profile.ref_text,
-            file_size=cache_wav.stat().st_size,
+            file_size=os.path.getsize(str(cache_wav)),
             duration_sec=duration,
         )
 
@@ -175,20 +176,16 @@ class VoiceProfileManager:
         return combined_hash
 
     def get_profile(self, combined_hash: str) -> Optional[VoiceProfile]:
-        """Load voice profile by combined hash."""
+        """Load voice profile from cache."""
         if combined_hash not in self._index:
             return None
-
         meta = self._index[combined_hash]
         profile_path = self.cache_dir / f"{combined_hash}.json"
         wav_path = self.cache_dir / f"{combined_hash}.wav"
-
         if not profile_path.exists() or not wav_path.exists():
             return None
-
         with open(profile_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-
         return VoiceProfile(
             name=meta.name,
             backend=meta.backend,
@@ -206,11 +203,9 @@ class VoiceProfileManager:
         """Delete a voice profile from cache."""
         if combined_hash not in self._index:
             return False
-
         meta = self._index[combined_hash]
         (self.cache_dir / f"{combined_hash}.json").unlink(missing_ok=True)
         (self.cache_dir / f"{combined_hash}.wav").unlink(missing_ok=True)
-
         del self._index[combined_hash]
         self._save_index()
         return True
@@ -218,8 +213,8 @@ class VoiceProfileManager:
     def clear_cache(self) -> int:
         """Clear all cached profiles. Returns count of deleted profiles."""
         count = len(self._index)
-        for hash_key in list(self._index.keys()):
-            self.delete_profile(hash_key)
+        for combined_hash in list(self._index.keys()):
+            self.delete_profile(combined_hash)
         return count
 
     def get_cache_stats(self) -> dict:
@@ -235,3 +230,15 @@ class VoiceProfileManager:
             "total_size_mb": round(total_size / (1024 * 1024), 2),
             "cache_dir": str(self.cache_dir),
         }
+
+
+# Global instance
+_voice_manager: Optional[VoiceProfileManager] = None
+
+
+def get_voice_manager(cache_dir: Optional[Path] = None) -> VoiceProfileManager:
+    """Get global voice profile manager instance."""
+    global _voice_manager
+    if _voice_manager is None:
+        _voice_manager = VoiceProfileManager(cache_dir)
+    return _voice_manager

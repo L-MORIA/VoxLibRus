@@ -128,6 +128,14 @@ class VoiceCloner:
                     "Consider providing full transcription for best results."
                 )
 
+        # Check for existing cached profile first
+        from voxlib.voice.manager import VoiceProfileManager
+        voice_manager = VoiceProfileManager()
+        cached_profile = voice_manager.get_cached_profile(processed_audio_path, ref_text.strip())
+        if cached_profile:
+            print(f"Using cached voice profile: {cached_profile.name}")
+            return cached_profile
+
         # Create voice profile
         # Get TTS backend
         self._get_tts_backend()
@@ -146,7 +154,32 @@ class VoiceCloner:
             },
         )
 
+        # Cache the profile for future reuse
+        voice_manager.save_profile(voice_profile, ref_audio_path, ref_text.strip())
+
         return voice_profile
+
+    def _get_tts_backend(self) -> TTSInterface:
+        """Lazy load TTS backend."""
+        if self._tts_backend is None:
+            if self.clone_config.tts_backend == "f5tts":
+                self._tts_backend = F5TTSBackend(self.config.tts.f5tts)
+            else:
+                raise ValueError(f"Unknown TTS backend: {self.clone_config.tts_backend}")
+        return self._tts_backend
+
+    def _get_asr_backend(self) -> ASRInterface:
+        """Lazy load ASR backend."""
+        if self._asr_backend is None:
+            if self.clone_config.asr_backend == "gigaam":
+                from voxlib.asr.gigaam import GigaAMBackend
+                self._asr_backend = GigaAMBackend(self.config.asr.gigaam)
+            elif self.clone_config.asr_backend == "whisper":
+                from voxlib.asr.whisper import WhisperBackend
+                self._asr_backend = WhisperBackend(self.config.asr.whisper)
+            else:
+                raise ValueError(f"Unknown ASR backend: {self.clone_config.asr_backend}")
+        return self._asr_backend
 
     def generate(
         self,
