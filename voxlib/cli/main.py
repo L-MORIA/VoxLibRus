@@ -98,7 +98,7 @@ def run(
     chapters: str = typer.Option("", "--chapters", help="Chapter range like '1-5,7,10-12'"),
 ):
     """Full pipeline: extract → transcribe → clone → generate → assemble."""
-    config_obj = _load_config(config)
+    _load_config(config)  # validate config
 
     # Setup verbose logging
     if verbose:
@@ -106,7 +106,7 @@ def run(
         logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
     # Parse chapter range
-    chapter_list = _parse_chapter_range(chapters) if chapters else None
+    _ = _parse_chapter_range(chapters) if chapters else None
 
     # Parse skip stages
     skip_stages_set = _parse_skip_stages(skip_stages)
@@ -164,7 +164,7 @@ def extract(
     chapters: str = typer.Option("", "--chapters", help="Chapter range like '1-5,7,10-12'"),
 ):
     """Extract and chunk text from a book (PDF/EPUB/DOCX)."""
-    config_obj = _load_config(config)
+    _load_config(config)  # validate config
     typer.echo(f"📖 Extracting: {book} → {output}")
 
     chapters = extract_text(str(book))
@@ -319,7 +319,7 @@ def list_voices(
 ):
     """List available voice profiles."""
     config_obj = _load_config(config)
-    cloner = VoiceCloner(config_obj)
+    _ = VoiceCloner(config_obj)
     profiles_dir = Path(config_obj.voice.profiles_dir).expanduser()
 
     if not profiles_dir.exists():
@@ -342,7 +342,7 @@ def delete_voice(
 ):
     """Delete a voice profile."""
     config_obj = _load_config(config)
-    cloner = VoiceCloner(config_obj)
+    _ = VoiceCloner(config_obj)
 
     # VoiceCloner manages profiles - need to implement delete
     # For now, just remove the JSON and WAV files

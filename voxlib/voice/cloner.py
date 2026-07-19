@@ -7,7 +7,7 @@ from voxlib.config import Config
 from voxlib.tts.base import TTSInterface, VoiceProfile, TTSGenerationConfig
 from voxlib.tts.f5tts import F5TTSBackend
 from voxlib.asr.base import ASRInterface
-from voxlib.voice.manager import VoiceProfileManager, VoiceProfileMeta
+from voxlib.voice.manager import VoiceProfileManager
 
 
 @dataclass

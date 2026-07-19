@@ -4,10 +4,10 @@ import hashlib
 import json
 import os
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from voxlib.tts.base import VoiceProfile
 
@@ -110,7 +110,7 @@ class VoiceProfileManager:
             if profile_path.exists() and wav_path.exists():
                 try:
                     with open(profile_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
+                        json.load(f)  # validate JSON format
                     # Verify hashes still match
                     if meta.combined_hash == combined_hash:
                         return VoiceProfile(
@@ -132,8 +132,6 @@ class VoiceProfileManager:
         original_text: str,
     ) -> str:
         """Save voice profile to cache. Returns combined hash."""
-        from voxlib.audio.preprocess import prepare_reference
-        from voxlib.audio.preprocess import prepare_reference
         import soundfile as sf
 
         # Compute combined hash
@@ -145,7 +143,6 @@ class VoiceProfileManager:
             shutil.copy2(profile.ref_audio, cache_wav)
 
         # Get audio info
-        import soundfile as sf
         info = sf.info(str(cache_wav))
         duration = info.frames / info.samplerate
 
