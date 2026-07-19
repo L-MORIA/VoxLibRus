@@ -115,7 +115,8 @@ class F5TTSBackend(TTSInterface):
             from f5_tts.model import DiT
             from f5_tts.infer.utils_infer import (
                 load_model,
-                infer_process,
+                load_vocoder,
+                infer_process as _orig_infer_process,
                 preprocess_ref_audio_text,
                 remove_silence_for_generated_wav,
             )
@@ -138,9 +139,18 @@ class F5TTSBackend(TTSInterface):
         ckpt_path = self._get_checkpoint_path()
 
         self._model = load_model(DiT, model_cfg, ckpt_path, device=str(self._device))
-        # BigVGAN: use our own loader (f5_tts's bigvgan import chain is broken on Windows)
-        self._vocoder = _load_bigvgan_vocoder(device=str(self._device))
-        self._infer_process = infer_process
+        # Vocoder: Vocos (default, stable) or BigVGAN (experimental, configurable)
+        vocoder_name = getattr(self.config, "vocoder", "vocos")
+        if vocoder_name == "bigvgan":
+            self._vocoder = _load_bigvgan_vocoder(device=str(self._device))
+            # BigVGAN requires mel_spec_type="bigvgan" (100 bands vs Vocos' 80)
+            def _bigvgan_infer(*args, **kwargs):
+                kwargs["mel_spec_type"] = "bigvgan"
+                return _orig_infer_process(*args, **kwargs)
+            self._infer_process = _bigvgan_infer
+        else:
+            self._vocoder = load_vocoder(device=str(self._device))
+            self._infer_process = _orig_infer_process
         self._preprocess_ref = preprocess_ref_audio_text
         self._remove_silence = remove_silence_for_generated_wav
 

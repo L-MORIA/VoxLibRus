@@ -72,6 +72,8 @@ class F5TTSConfig(BaseModel):
     # Варианты: F5TTS_v1_Base | F5TTS_v1_Base_accent_tune | F5TTS_v1_Base_v2
     # accent_tune — с полной разметкой ударений, рекомендуется для качества
     variant: str = "F5TTS_v1_Base_accent_tune"
+    # Vocoder: "vocos" (default, stable) or "bigvgan" (experimental, needs proper mel bands)
+    vocoder: str = "vocos"
 
 
 class TTSConfig(BaseModel):

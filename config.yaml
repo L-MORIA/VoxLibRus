@@ -38,6 +38,7 @@ tts:
     device: cuda
     ref_audio_sample_rate: 24000
     variant: F5TTS_v1_Base_accent_tune
+    # vocoder: bigvgan  # раскомментировать для BigVGAN (экспериментально)
 
 voice:
   profiles_dir: ~/.voxlib/speakers
