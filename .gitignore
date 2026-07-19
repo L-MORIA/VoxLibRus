@@ -21,3 +21,6 @@ temp/
 
 # Large model weights (keep on F: drive)
 models/
+
+# Generated book files
+*.epub
