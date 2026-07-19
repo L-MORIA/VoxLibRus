@@ -71,7 +71,7 @@ class GigaAMBackend(ASRInterface):
         model = AutoModel.from_config(
             config,
             trust_remote_code=True,
-            dtype=torch.float16 if self.config.device == "cuda" else torch.float32,
+            dtype=torch.float32,
         )
 
         # Load weights from safetensors

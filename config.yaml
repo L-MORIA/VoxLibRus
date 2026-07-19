@@ -20,7 +20,7 @@ asr:
   gigaam:
     model_id: ai-sage/GigaAM-v3
     revision: e2e_rnnt
-    device: cpu
+    device: cuda
   whisper:
     model_id: openai/whisper-large-v3
     device: cpu
@@ -35,7 +35,7 @@ tts:
     streaming: false
   f5tts:
     model_id: Misha24-10/F5-TTS_RUSSIAN
-    device: cpu
+    device: cuda
     ref_audio_sample_rate: 24000
     variant: F5TTS_v1_Base_accent_tune
 
