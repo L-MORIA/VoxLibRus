@@ -26,6 +26,7 @@ dependencies = [
     "rich>=13.0.0",
     "tqdm>=4.66.0",
     "num2words>=0.5.12",
+    "scipy>=1.10.0",
     "ruaccent>=1.4.0",
 ]
 

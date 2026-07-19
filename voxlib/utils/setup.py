@@ -51,6 +51,12 @@ def pick_device(config_device: str, vram_gb: int = 16) -> str:
         return "cpu"
     if not torch.cuda.is_available():
         return "cpu"
+    # Check actual available VRAM if configured device is cuda
+    if config_device == "cuda":
+        actual_vram = torch.cuda.get_device_properties(0).total_memory / 1e9
+        if actual_vram < vram_gb:
+            print(f"[GPU] WARNING: VRAM {actual_vram:.0f}GB < {vram_gb}GB required — falling back to CPU")
+            return "cpu"
     return "cuda"
 
 
@@ -81,6 +87,8 @@ def setup_gpu_compat():
             # Full hardware support — keep defaults
             pass
 
-    # Torchaudio → soundfile (always on Windows — avoids FFmpeg DLL issues)
-    from voxlib.utils.torchaudio_shim import apply_patch
-    apply_patch()
+    # Torchaudio → soundfile (Windows-only — avoids FFmpeg DLL issues)
+    import sys
+    if sys.platform == "win32":
+        from voxlib.utils.torchaudio_shim import apply_patch
+        apply_patch()

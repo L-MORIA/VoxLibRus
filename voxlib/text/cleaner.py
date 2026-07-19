@@ -258,7 +258,7 @@ def _replace_ordinal(m: re.Match) -> str:
         'й': ('masculine', 'nominative'),
         'я': ('feminine', 'nominative'),
         'е': ('neuter', 'nominative'),
-        'м': ('masculine', 'prepositional'),   # 3-м → третьим
+        'м': ('masculine', 'instrumental'),  # 3-м → третьим (not prepositional!)
         'х': ('plural', 'prepositional'),       # 90-х → девяностых
         'го': ('masculine', 'genitive'),        # 21-го → двадцать первого
         'му': ('masculine', 'dative'),          # 5-му → пятому

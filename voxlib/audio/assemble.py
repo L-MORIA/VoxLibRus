@@ -125,37 +125,77 @@ def create_m4b_with_chapters(
     chapter_pause_sec: float = 2.5,
     ffmpeg_path: str = "",
 ) -> None:
-    """Create M4B audiobook with chapter markers from MP3."""
+    """Create M4B audiobook with chapter markers from MP3.
+
+    Groups consecutive chunks belonging to the same chapter into one
+    chapter marker, accounting for silence between chapters.
+
+    Args:
+        input_mp3: Input MP3 file (the assembled audiobook).
+        output_m4b: Output M4B file path.
+        chapter_titles: Chapter title for each chunk (same length as chunk_files).
+        chapter_files: Audio chunk files in order.
+        chapter_pause_sec: Silence duration inserted between chapters (not between chunks inside a chapter).
+        ffmpeg_path: Path to ffmpeg executable.
+    """
     output_m4b = str(Path(output_m4b).resolve())
     ffmpeg = ffmpeg_path or _FFMPEG
+
+    # Get duration of each chunk
+    durations = []
+    for chunk in chapter_files or []:
+        dur = get_audio_duration(chunk, ffmpeg=ffmpeg)
+        durations.append(dur)
+
+    # Group consecutive chunks by chapter title
+    # Each group becomes one chapter marker
+    groups: list[tuple[str, float]] = []  # (title, total_duration_with_pauses)
+    prev_title = None
+    current_group_dur = 0.0
+    current_group_title = ""
+
+    for i, (title, dur) in enumerate(zip(chapter_titles or [], durations)):
+        if i == 0:
+            current_group_title = title
+            current_group_dur = dur
+            prev_title = title
+            continue
+
+        if title == prev_title:
+            # Same chapter — add chunk duration, no pause
+            current_group_dur += dur
+        else:
+            # Chapter boundary — save group, insert pause, start new group
+            groups.append((current_group_title, current_group_dur))
+            current_group_title = title
+            current_group_dur = dur + chapter_pause_sec  # pause before this chapter
+        prev_title = title
+
+    # Save last group
+    if current_group_dur > 0:
+        groups.append((current_group_title, current_group_dur))
 
     import tempfile
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         meta_path = f.name
-
-        durations = []
-        for chunk in chapter_files or []:
-            dur = get_audio_duration(chunk, ffmpeg=ffmpeg)
-            durations.append(dur)
-
         f.write(";FFMETADATA1\n")
-        if chapter_titles:
+        if groups:
             current_time = 0.0
-            for i, (title, dur) in enumerate(zip(chapter_titles, durations)):
+            for title, total_dur in groups:
                 start_time = int(current_time * 1000)
-                end_time = int((current_time + dur) * 1000)
+                end_time = int((current_time + total_dur) * 1000)
                 f.write("[CHAPTER]\n")
                 f.write("TIMEBASE=1/1000\n")
                 f.write(f"START={start_time}\n")
                 f.write(f"END={end_time}\n")
                 f.write(f"title={title}\n\n")
-                current_time += dur
+                current_time += total_dur
         f.close()
 
-        cmd = [ffmpeg, "-y", "-i", input_mp3, "-i", meta_path,
-               "-map_metadata", "1", "-c:a", "aac", "-b:a", "192k", output_m4b]
-        subprocess.run(cmd, check=True, capture_output=True)
-        Path(meta_path).unlink()
+    cmd = [ffmpeg, "-y", "-i", input_mp3, "-i", meta_path,
+           "-map_metadata", "1", "-c:a", "aac", "-b:a", "192k", output_m4b]
+    subprocess.run(cmd, check=True, capture_output=True)
+    Path(meta_path).unlink()
 
 
 def get_audio_duration(file_path: str, ffmpeg: str = "") -> float:

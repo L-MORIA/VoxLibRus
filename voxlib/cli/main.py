@@ -203,6 +203,10 @@ def assemble(
 
     typer.echo("✅ Assembly complete")
 
+    # Cleanup: remove intermediate MP3 if user requested M4B only
+    if format == "m4b" and Path(output_mp3).exists():
+        Path(output_mp3).unlink()
+
 
 if __name__ == "__main__":
     app()
