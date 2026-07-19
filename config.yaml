@@ -52,8 +52,8 @@ generation:
   retry_delay: 5
 
 audio:
-  target_lufs: -16
-  peak_dbfs: -1
+  target_lufs: -20
+  peak_dbfs: -3
   chapter_pause_sec: 2.5
   output:
     format: mp3

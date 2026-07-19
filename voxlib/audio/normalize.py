@@ -5,6 +5,50 @@ import json
 from pathlib import Path
 
 import subprocess
+import numpy as np
+
+
+def _apply_noise_gate(audio: np.ndarray, threshold_db: float = -50.0) -> np.ndarray:
+    """Apply noise gate to suppress audio below threshold.
+
+    Args:
+        audio: Audio samples as float32 array (-1.0 to 1.0)
+        threshold_db: Threshold in dB below which audio is muted
+
+    Returns:
+        Audio with noise gate applied
+    """
+    if threshold_db is None:
+        return audio
+
+    # Convert dB to linear amplitude
+    threshold_linear = 10 ** (threshold_db / 20.0)
+
+    # Compute RMS in small windows to detect speech vs silence
+    window_size = 1024  # ~43ms at 24kHz
+    hop_size = 256
+
+    # Pad audio to handle edges
+    pad_size = window_size // 2
+    padded = np.pad(audio, (pad_size, pad_size), mode="reflect")
+
+    gated = np.zeros_like(audio)
+
+    for i in range(0, len(audio), hop_size):
+        window_end = min(i + window_size, len(audio))
+        window = padded[i:i + window_size]
+
+        # Compute RMS
+        rms = np.sqrt(np.mean(window ** 2)) + 1e-10
+
+        if rms >= threshold_linear:
+            # Keep original audio
+            gated[i:window_end] = audio[i:window_end]
+        else:
+            # Mute (or heavily attenuate)
+            gated[i:window_end] = audio[i:window_end] * 0.001  # -60dB attenuation
+
+    return gated
 
 
 def loudness_normalize(
@@ -15,6 +59,7 @@ def loudness_normalize(
     target_lra: float = 11.0,
     dual_mono: bool = True,
     ffmpeg_path: str = "ffmpeg",
+    noise_gate_db: float = -50.0,
 ) -> str:
     """Normalize audio loudness to EBU R128 standard.
 
@@ -26,6 +71,7 @@ def loudness_normalize(
         target_lra: Target loudness range (default: 11 LU).
         dual_mono: Treat stereo as dual mono for normalization.
         ffmpeg_path: Path to ffmpeg executable.
+        noise_gate_db: Noise gate threshold in dB (default: -50 dB).
 
     Returns:
         Path to normalized audio file.
@@ -73,9 +119,40 @@ def loudness_normalize(
         output_path,
     ]
 
-    subprocess.run(cmd_normalize, capture_output=True, text=True, check=True)
+    result = subprocess.run(cmd_normalize, capture_output=True, text=True, check=True)
+
+    # Apply noise gate post-normalization if requested
+    if noise_gate_db is not None and noise_gate_db > -100:
+        _apply_noise_gate_post(output_path, noise_gate_db)
 
     return output_path
+
+
+def _apply_noise_gate_post(file_path: str, threshold_db: float = -50.0) -> None:
+    """Apply noise gate to file in-place using pydub + numpy."""
+    try:
+        from pydub import AudioSegment
+        import numpy as np
+
+        audio = AudioSegment.from_file(file_path)
+        samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
+        samples = samples / (2**15)  # Normalize to -1.0..1.0
+
+        # Apply noise gate
+        gated = _apply_noise_gate(samples, threshold_db)
+
+        # Convert back
+        gated = np.clip(gated * (2**15), -2**15, 2**15 - 1).astype(np.int16)
+        gated_audio = AudioSegment(
+            gated.tobytes(),
+            frame_rate=audio.frame_rate,
+            sample_width=audio.sample_width,
+            channels=audio.channels
+        )
+        gated_audio.export(file_path, format="mp3", bitrate="192k")
+    except ImportError:
+        # pydub/numpy not available, skip noise gate
+        pass
 
 
 def loudness_normalize_single_pass(
@@ -103,7 +180,7 @@ def loudness_normalize_single_pass(
         output_path,
     ]
 
-    subprocess.run(cmd, capture_output=True, text=True, check=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     return output_path
 

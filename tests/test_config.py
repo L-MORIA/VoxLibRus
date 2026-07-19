@@ -45,11 +45,11 @@ class TestConfigLoad:
         assert cfg.generation.retry_delay == 5
 
     def test_audio_params(self, cfg: Config):
-        assert cfg.audio.target_lufs == -16.0
-        assert cfg.audio.peak_dbfs == -1.0
-        assert cfg.audio.chapter_pause_sec == 2.5
-        assert cfg.audio.output.format == "mp3"
-        assert cfg.audio.output.mp3_bitrate == 192
+            assert cfg.audio.target_lufs == -20.0
+            assert cfg.audio.peak_dbfs == -3.0
+            assert cfg.audio.chapter_pause_sec == 2.5
+            assert cfg.audio.output.format == "mp3"
+            assert cfg.audio.output.mp3_bitrate == 192
 
     def test_profiles_dir_resolves(self, cfg: Config):
         assert cfg.profiles_dir.name == "speakers"
