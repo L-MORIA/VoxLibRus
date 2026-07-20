@@ -114,6 +114,28 @@ class OutputConfig(BaseModel):
     mp3_bitrate: int = 192
 
 
+class QAGateConfig(BaseModel):
+    """Configuration for the audio QA gate (Stage 6).
+
+    Thresholds are tuned for audiobook chunks: a single book chunk can be
+    5–60s of speech, so duration_max_sec must be much higher than the old
+    hardcoded default of 20s (which rejected every long sentence).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    rms_min_db: float = -45.0          # was -30 in QAConfig (too strict)
+    rms_max_db: float = -3.0
+    peak_max: float = 0.99
+    dc_offset_max: float = 0.05
+    duration_min_sec: float = 0.5
+    duration_max_sec: float = 120.0    # was 20 — rejected real chunks
+    silence_threshold_db: float = -60.0
+    max_silence_ratio: float = 0.4
+    max_retries: int = 3
+
+
 class AudioConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     """Audio processing configuration."""
@@ -162,6 +184,7 @@ class Config(BaseModel):
     voice: VoiceConfig = VoiceConfig()
     generation: GenerationConfig = GenerationConfig()
     audio: AudioConfig = AudioConfig()
+    qa_gate: QAGateConfig = QAGateConfig()
 
     @classmethod
     def from_yaml(cls, path: Path = DEFAULT_CONFIG_PATH) -> "Config":

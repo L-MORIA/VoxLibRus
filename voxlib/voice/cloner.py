@@ -186,15 +186,17 @@ class VoiceCloner:
 
     @staticmethod
     def _calc_fix_duration(text: str, chars_per_sec: float = 12.0, margin: float = 1.0) -> float:
-        """Calculate a stable duration hint based on text length.
+        """Estimate speech duration from text length.
 
-        Args:
-            text: Input text (may contain '+' stress marks which don't affect length).
-            chars_per_sec: Average speech rate in characters/second.
-            margin: Seconds of padding added on top of the computed duration.
+        NOTE: This is intentionally NOT used as a default for F5-TTS anymore
+        (regression introduced in P1-3 and reverted in C2). F5-TTS's
+        `infer_process` applies `fix_duration` to **each internal batch**
+        (it re-splits long text via its own chunker), so a value computed for
+        the whole chunk inflated total audio 5–10×. We let F5 auto-compute
+        duration from `ref_audio_len / ref_text_len * gen_text_len` instead.
 
-        Returns:
-            Duration in seconds, always >= 2.0.
+        Kept here as a public helper for callers that explicitly want a hint
+        (e.g. Qwen3 backend, which has no internal batching).
         """
         clean = text.replace("+", "").strip()
         dur = len(clean) / chars_per_sec + margin
@@ -209,14 +211,15 @@ class VoiceCloner:
     ):
         """Generate speech from text using a cloned voice.
 
-        If no generation config is provided a default is built with a
-        text-length-based fix_duration for tempo stabilisation (P1-3).
+        By default no `fix_duration` is set (C2 fix): F5-TTS computes duration
+        from the reference audio + text lengths, which is the correct
+        behaviour and avoids the ×batches blow-up that produced 400s chunks.
+        Pass an explicit `config` with `fix_duration` only when you know the
+        backend handles it correctly (single-batch input or Qwen3).
         """
         tts_backend = self._get_tts_backend()
         if config is None:
-            config = TTSGenerationConfig(
-                fix_duration=self._calc_fix_duration(text),
-            )
+            config = TTSGenerationConfig()
         return tts_backend.generate(text, voice, output_path, config)
 
     def generate_batch(
@@ -234,9 +237,9 @@ class VoiceCloner:
         results = []
         for i, text in enumerate(texts):
             output_path = str(output_dir / f"chunk_{i:04d}.wav")
-            chunk_cfg = config or TTSGenerationConfig(
-                fix_duration=self._calc_fix_duration(text),
-            )
+            # Pass through caller config as-is; do NOT inject a per-text
+            # fix_duration here (see generate() docstring — C2 regression).
+            chunk_cfg = config or TTSGenerationConfig()
             result = tts_backend.generate(text, voice, output_path, chunk_cfg)
             results.append(result)
         return results

@@ -263,45 +263,56 @@ class Pipeline:
                 chapter_dir = Path(state.temp_dir) / "chapters"
                 chapter_dir.mkdir(parents=True, exist_ok=True)
 
-                # Load QA config from config
-                _qa_cfg = QAConfig.from_config(getattr(self.config, "qa_gate", {}))
-                if not getattr(self.config, "qa_gate", {}).get("enabled", True):
-                    # QA gate disabled - run without QA
+                # Resolve QA config from the Config model (H2: previously read a
+                # non-existent `qa_gate` attribute and always fell back to {}).
+                qa_section = getattr(self.config, "qa_gate", None)
+                qa_enabled = getattr(qa_section, "enabled", True) if qa_section else True
+                qa_cfg = QAConfig.from_config(qa_section)
+
+                generated_paths = []
+
+                if not qa_enabled:
+                    # QA gate disabled — generate the whole batch and accept results.
                     generated_paths = self.voice_cloner.generate_batch(
                         texts=[c["text"] for c in state.chunks],
                         voice=voice,
                         output_dir=str(chapter_dir),
                     )
-                    state.chunks_generated = [str(p) for p in generated_paths]
+                    generated_paths = [str(p) for p in generated_paths]
                 else:
-                    # Generate with QA gate and retry
-                    chunk_dir = Path(state.temp_dir) / "chapters"
-                    chunk_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    generated_paths = []
+                    # Generate each chunk, then run QA with retry-on-failure.
+                    # IMPORTANT (C1): the chunk must be generated BEFORE the first
+                    # QA check; otherwise `check_audio_quality` always reports
+                    # "File not found" and the pipeline produces zero output.
                     for i, chunk in enumerate(state.chunks):
                         chunk_txt = chunk["text"]
-                        chunk_path = Path(state.temp_dir) / "chapters" / f"chunk_{i:04d}.wav"
-                        
-                        def regenerate_chunk():
-                            # Regenerate single chunk
+                        chunk_path = chapter_dir / f"chunk_{i:04d}.wav"
+
+                        # Bind loop variables as default args to avoid Python's
+                        # late-binding closure bug (H3): without this, every
+                        # regenerate_chunk() call would synthesise the *last*
+                        # chunk's text.
+                        def _generate_one(_txt=chunk_txt, _path=chunk_path):
                             self.voice_cloner.generate(
-                                text=chunk_txt,
+                                text=_txt,
                                 voice=VoiceProfile(**state.voice_profile),
-                                output_path=str(chunk_path),
+                                output_path=str(_path),
                             )
-                        
+
+                        # First (real) generation, then QA checks it.
+                        _generate_one()
+
                         result = check_audio_quality_with_retry(
                             audio_path=str(chunk_path),
-                            config=QAConfig.from_config(getattr(self.config, "qa_gate", {})),
-                            regenerate_fn=regenerate_chunk,
+                            config=qa_cfg,
+                            regenerate_fn=_generate_one,
                         )
                         if result.passed:
                             generated_paths.append(str(chunk_path))
                         else:
                             state.chunks_failed.append({"id": i, "errors": result.errors})
-                
-                state.chunks_generated = [str(p) for p in generated_paths]
+
+                state.chunks_generated = generated_paths
                 state.stages_completed.append("generate")
                 self._save_state()
                 print(f"Generated {len(generated_paths)} audio chunks")

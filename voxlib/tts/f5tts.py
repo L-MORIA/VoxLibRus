@@ -237,6 +237,13 @@ class F5TTSBackend(TTSInterface):
         processed_text = self._process_text_for_generation(text, cfg)
 
         # Generate
+        # IMPORTANT (C2 regression): f5_tts.infer.utils_infer.infer_process
+        # re-splits gen_text into batches by ref-audio duration and applies
+        # `fix_duration` to EACH batch separately. Passing a per-chunk hint
+        # therefore inflated total audio ~5-10x (a 60-char chunk became 400s).
+        # Default behaviour (fix_duration=None) makes F5 auto-compute duration
+        # as `ref_audio_len / ref_text_len * gen_text_len` — which is what we
+        # want. Only forward an explicit non-None value.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             audio = self._infer_process(
@@ -248,7 +255,7 @@ class F5TTSBackend(TTSInterface):
                 device=str(self._device),
                 speed=cfg.speed,
                 cross_fade_duration=cfg.cross_fade_duration,
-                fix_duration=cfg.fix_duration,  # NEW: P1-3 fixed duration
+                fix_duration=cfg.fix_duration,
             )
 
         # Save

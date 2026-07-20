@@ -131,11 +131,18 @@ class VoiceProfileManager:
         original_audio: str,
         original_text: str,
     ) -> str:
-        """Save voice profile to cache. Returns combined hash."""
+        """Save voice profile to cache. Returns combined hash.
+
+        The cache key (combined_hash) is computed from the **original** audio
+        path + reference text, matching what `get_cached_profile` looks up.
+        Previously this used `profile.ref_audio` (the *processed* file), whose
+        bytes differ on every ffmpeg run → cache miss was nearly guaranteed.
+        """
         import soundfile as sf
 
-        # Compute combined hash
-        combined_hash = self._compute_combined_hash(profile.ref_audio, profile.ref_text)
+        # Compute combined hash from the ORIGINAL inputs (C3 fix), so cache
+        # lookups (which hash the same original inputs) actually hit.
+        combined_hash = self._compute_combined_hash(original_audio, original_text)
 
         # Copy reference audio to cache
         cache_wav = self.cache_dir / f"{combined_hash}.wav"

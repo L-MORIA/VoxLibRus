@@ -51,6 +51,18 @@ generation:
   max_retries: 3
   retry_delay: 5
 
+qa_gate:
+  enabled: true
+  rms_min_db: -45.0
+  rms_max_db: -3.0
+  peak_max: 0.99
+  dc_offset_max: 0.05
+  duration_min_sec: 0.5
+  duration_max_sec: 120.0   # one book chunk can be up to ~60s of speech
+  silence_threshold_db: -60.0
+  max_silence_ratio: 0.4
+  max_retries: 3
+
 audio:
   target_lufs: -20
   peak_dbfs: -3

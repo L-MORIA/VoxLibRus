@@ -18,35 +18,61 @@ logger = logging.getLogger(__name__)
 class QAConfig:
     """Configuration for Audio Quality Assurance Gate."""
     # Loudness / RMS
-    rms_min_db: float = -30.0
-    rms_max_db: float = -10.0
+    rms_min_db: float = -45.0          # was -30 (too strict, rejected quiet speech)
+    rms_max_db: float = -3.0
     # Peak / Clipping
     peak_max: float = 0.99
     # DC Offset
-    dc_offset_max: float = 0.01
+    dc_offset_max: float = 0.05
     # Duration
-    duration_min_sec: float = 1.0
-    duration_max_sec: float = 20.0
+    duration_min_sec: float = 0.5
+    duration_max_sec: float = 120.0    # was 20 (rejected real audiobook chunks)
     # Silence / Dropout
     silence_threshold_db: float = -60.0
-    max_silence_ratio: float = 0.3
-    # DC Offset
-    dc_offset_max: float = 0.01
+    max_silence_ratio: float = 0.4     # was 0.3 (too strict for pauses in prose)
     # Retry
     max_retries: int = 3
 
     @classmethod
-    def from_config(cls, config_dict: dict) -> "QAConfig":
-        """Create QAConfig from config dict (e.g., from YAML)."""
+    def from_config(cls, config) -> "QAConfig":
+        """Create QAConfig from a dict OR a Pydantic-like config object.
+
+        Accepts either:
+        - a plain dict (legacy behaviour, used when `qa_gate` is missing)
+        - a pydantic model with the same field names (e.g. voxlib.config.QAGateConfig)
+        """
+        if config is None:
+            return cls()
+        # Pydantic v2 models expose .model_dump(); pydantic v1 uses .dict()
+        if hasattr(config, "model_dump"):
+            config_dict = config.model_dump()
+        elif hasattr(config, "dict") and callable(getattr(config, "dict", None)):
+            config_dict = config.dict()
+        elif isinstance(config, dict):
+            config_dict = config
+        else:
+            # Last resort: read public attributes
+            config_dict = {
+                k: getattr(config, k)
+                for k in (
+                    "enabled", "rms_min_db", "rms_max_db", "peak_max",
+                    "dc_offset_max", "duration_min_sec", "duration_max_sec",
+                    "silence_threshold_db", "max_silence_ratio", "max_retries",
+                )
+                if hasattr(config, k)
+            }
+        # `enabled` is consumed by the pipeline, not QAConfig itself.
+        config_dict = {k: v for k, v in config_dict.items() if k != "enabled"}
         return cls(
-            rms_min_db=config_dict.get("rms_min_db", -30.0),
-            rms_max_db=config_dict.get("rms_max_db", -10.0),
-            peak_max=config_dict.get("peak_max", 0.99),
-            duration_min_sec=config_dict.get("duration_min_sec", 1.0),
-            duration_max_sec=config_dict.get("duration_max_sec", 20.0),
-            silence_threshold_db=config_dict.get("silence_threshold_db", -60.0),
-            max_silence_ratio=config_dict.get("max_silence_ratio", 0.3),
-            max_retries=config_dict.get("max_retries", 3),
+            rms_min_db=config_dict.get("rms_min_db", cls().rms_min_db),
+            rms_max_db=config_dict.get("rms_max_db", cls().rms_max_db),
+            peak_max=config_dict.get("peak_max", cls().peak_max),
+            dc_offset_max=config_dict.get("dc_offset_max", cls().dc_offset_max),
+            duration_min_sec=config_dict.get("duration_min_sec", cls().duration_min_sec),
+            duration_max_sec=config_dict.get("duration_max_sec", cls().duration_max_sec),
+            silence_threshold_db=config_dict.get("silence_threshold_db", cls().silence_threshold_db),
+            max_silence_ratio=config_dict.get("max_silence_ratio", cls().max_silence_ratio),
+            max_retries=config_dict.get("max_retries", cls().max_retries),
         )
 
 
