@@ -66,6 +66,23 @@ def _load_accentizer(timeout: float = 8.0) -> bool:
             _accentizer = result[1]
             _accentizer_available = True
             logger.info(f"RUAccent loaded successfully with model '{model_size}'")
+
+            # Patch: ONNX model expects token_type_ids but the tokenizer
+            # doesn't provide it. Intercept session.run to inject zeros.
+            _orig_session_run = _accentizer.accent_model.session.run
+
+            def _patched_session_run(output_names, input_feed):
+                if "token_type_ids" not in input_feed:
+                    import numpy as np
+                    # Copy to avoid mutating caller's dict
+                    input_feed = dict(input_feed)
+                    seq_len = input_feed["input_ids"].shape[-1]
+                    input_feed["token_type_ids"] = np.zeros(
+                        (1, seq_len), dtype=np.int64
+                    )
+                return _orig_session_run(output_names, input_feed)
+
+            _accentizer.accent_model.session.run = _patched_session_run
             return True
         else:
             # Timeout or failure - check if it was OOM
@@ -87,6 +104,9 @@ def _load_accentizer(timeout: float = 8.0) -> bool:
 def fix_accents(text: str) -> str:
     """Place stress marks in Russian text.
 
+    Processes text sentence-by-sentence to work around ONNX
+    token_type_ids bug on long inputs.
+
     Args:
         text: Russian text.
 
@@ -97,11 +117,22 @@ def fix_accents(text: str) -> str:
         return text
     if not _load_accentizer():
         return text
-    try:
-        return _accentizer.process_all(text)  # type: ignore
-    except Exception as e:
-        logger.warning(f"Accent placement failed: {e}")
-        return text
+
+    # Process sentence-by-sentence to avoid ONNX token_type_ids bug
+    # (turbo3.1/tiny models crash on long text with "missing token_type_ids")
+    import re as _re
+    sentences = _re.split(r'(?<=[.!?…])\s+', text)
+    result_parts = []
+    for sent in sentences:
+        if not sent.strip():
+            continue
+        try:
+            stressed = _accentizer.process_all(sent)  # type: ignore
+            result_parts.append(stressed)
+        except Exception:
+            # ONNX model failed on this sentence — return original
+            result_parts.append(sent)
+    return " ".join(result_parts)
 
 
 def is_available() -> bool:

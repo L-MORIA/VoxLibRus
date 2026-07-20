@@ -64,6 +64,7 @@ def assemble_audiobook(
     output_m4b: Optional[str] = None,
     chapter_titles: Optional[list[str]] = None,
     chapter_pause_sec: float = 2.5,
+    chunk_pause_sec: float = 0.3,
     ffmpeg_path: str = "",
     mp3_bitrate: int = 192,
 ) -> None:
@@ -75,6 +76,7 @@ def assemble_audiobook(
         output_m4b: Optional path for M4B (audiobook with chapters).
         chapter_titles: Optional list of chapter titles for M4B metadata.
         chapter_pause_sec: Silence duration between chapters in seconds.
+        chunk_pause_sec: Short pause between consecutive chunks (within same chapter).
         ffmpeg_path: Path to ffmpeg executable (empty = auto-detect).
         mp3_bitrate: MP3 bitrate in kbps.
     """
@@ -93,34 +95,47 @@ def assemble_audiobook(
         subprocess.run(cmd, check=True, capture_output=True)
         return
 
-    # Multiple chunks — concat via filter_complex (more reliable than demuxer)
+    # Multiple chunks — interleave with pauses
     import tempfile
-    silence_path = None
+    chunk_pause_path = None
+    chapter_pause_path = None
     try:
+        # Generate short silence for between chunks (same chapter)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            silence_path = f.name
+            chunk_pause_path = f.name
+        silence_cmd = [ffmpeg, "-y", "-f", "lavfi",
+                       "-i", "anullsrc=r=24000:cl=mono",
+                       "-t", str(chunk_pause_sec),
+                       "-c:a", "pcm_s16le", chunk_pause_path]
+        subprocess.run(silence_cmd, check=True, capture_output=True)
 
-        # Generate silence for chapter boundaries
+        # Generate long silence for between chapters
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            chapter_pause_path = f.name
         silence_cmd = [ffmpeg, "-y", "-f", "lavfi",
                        "-i", "anullsrc=r=24000:cl=mono",
                        "-t", str(chapter_pause_sec),
-                       "-c:a", "pcm_s16le", silence_path]
+                       "-c:a", "pcm_s16le", chapter_pause_path]
         subprocess.run(silence_cmd, check=True, capture_output=True)
 
-        # Build interleaved list: insert silence ONLY at chapter boundaries
+        # Build interleaved list: pauses between ALL chunks
         interleaved = []
         prev_title = None
         for i, chunk in enumerate(chunk_files):
             current_title = chapter_titles[i] if chapter_titles else None
-            # Insert silence BEFORE chunk if this is a new chapter (not the first)
-            if prev_title is not None and current_title != prev_title:
-                interleaved.append(silence_path)
+            if i > 0:
+                if prev_title is not None and current_title != prev_title:
+                    # Chapter boundary: use longer pause
+                    interleaved.append(chapter_pause_path)
+                else:
+                    # Same chapter: short pause between chunks
+                    interleaved.append(chunk_pause_path)
             interleaved.append(chunk)
             prev_title = current_title
 
         output_mp3 = str(Path(output_mp3).resolve())
 
-        # Use filter_complex concat instead of concat demuxer
+        # Use plain concat (no crossfade) — pauses are explicit
         inputs = []
         for f in interleaved:
             inputs.extend(["-i", f])
@@ -148,8 +163,9 @@ def assemble_audiobook(
             )
 
     finally:
-        if silence_path and Path(silence_path).exists():
-            Path(silence_path).unlink()
+        for _p in (chunk_pause_path, chapter_pause_path):
+            if _p and Path(_p).exists():
+                Path(_p).unlink()
 
 
 def create_m4b_with_chapters(
