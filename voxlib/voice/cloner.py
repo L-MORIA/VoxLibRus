@@ -1,6 +1,7 @@
 """Voice cloning and management for VoxLibRus."""
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from voxlib.config import Config
@@ -33,32 +34,48 @@ class VoiceCloner:
             from voxlib.config import Config
             self.config = Config.from_yaml()
 
+        # Read backends from actual config, not just defaults
         self.clone_config = VoiceCloneConfig()
+        self.clone_config.tts_backend = getattr(self.config.tts, "primary", "f5tts")
+        self.clone_config.asr_backend = getattr(self.config.asr, "primary", "gigaam")
         self._tts_backend: Optional[TTSInterface] = None
         self._asr_backend: Optional[ASRInterface] = None
         self.voice_manager = VoiceProfileManager()
 
+    # ------------------------------------------------------------------ #
+    #  Backend resolution
+    # ------------------------------------------------------------------ #
+
     def _get_tts_backend(self) -> TTSInterface:
         """Lazy load TTS backend."""
         if self._tts_backend is None:
-            if self.clone_config.tts_backend == "f5tts":
+            backend = self.clone_config.tts_backend
+            if backend == "f5tts":
                 self._tts_backend = F5TTSBackend(self.config.tts.f5tts)
+            elif backend == "qwen3":
+                from voxlib.tts.qwen3 import Qwen3TTSBackend
+                self._tts_backend = Qwen3TTSBackend(self.config.tts.qwen3)
             else:
-                raise ValueError(f"Unknown TTS backend: {self.clone_config.tts_backend}")
+                raise ValueError(f"Unknown TTS backend: {backend}")
         return self._tts_backend
 
     def _get_asr_backend(self) -> ASRInterface:
         """Lazy load ASR backend."""
         if self._asr_backend is None:
-            if self.clone_config.asr_backend == "gigaam":
+            backend = self.clone_config.asr_backend
+            if backend == "gigaam":
                 from voxlib.asr.gigaam import GigaAMBackend
                 self._asr_backend = GigaAMBackend(self.config.asr.gigaam)
-            elif self.clone_config.asr_backend == "whisper":
+            elif backend == "whisper":
                 from voxlib.asr.whisper import WhisperBackend
                 self._asr_backend = WhisperBackend(self.config.asr.whisper)
             else:
-                raise ValueError(f"Unknown ASR backend: {self.clone_config.asr_backend}")
+                raise ValueError(f"Unknown ASR backend: {backend}")
         return self._asr_backend
+
+    # ------------------------------------------------------------------ #
+    #  Voice clone
+    # ------------------------------------------------------------------ #
 
     def clone_voice(
         self,
@@ -70,15 +87,13 @@ class VoiceCloner:
 
         Args:
             ref_audio_path: Path to reference audio file (author reading 5-30 sec).
-            ref_text: Optional transcription of reference audio. If not provided,
-                     will be transcribed automatically using ASR.
+            ref_text: Optional transcription. If not provided, ASR runs automatically.
             name: Name for the voice profile (default: derived from audio filename).
 
         Returns:
             VoiceProfile with cloned voice identity.
         """
         import os
-        from pathlib import Path
         import soundfile as sf
 
         ref_audio_path = str(Path(ref_audio_path).resolve())
@@ -101,18 +116,31 @@ class VoiceCloner:
                 "Consider using shorter segment (5-30s) for better results."
             )
 
-        # Prepare reference audio (resample, denoise, trim)
+        # --- Cache check BEFORE expensive preprocess/ASR (P1-6 fix) --- #
+        # Compute hash from ORIGINAL audio path + text (if known) —
+        # if cache hits we skip preprocess and ASR entirely.
+        ref_text_stripped = ref_text.strip() if ref_text else ""
+        cached_profile = self.voice_manager.get_cached_profile(ref_audio_path, ref_text_stripped)
+        if cached_profile:
+            print(f"Using cached voice profile: {cached_profile.name}")
+            return cached_profile
+
+        # --- Preprocess reference audio (resample, denoise, trim) --- #
+        # P0-12: path now uses config.project.temp_dir, not cwd-relative "./.voxlib/tmp/"
+        voice_refs_dir = Path(self.config.project.temp_dir) / "voice_refs"
+        voice_refs_dir.mkdir(parents=True, exist_ok=True)
+
         from voxlib.audio.preprocess import prepare_reference
         processed_audio_path = prepare_reference(
             input_path=ref_audio_path,
-            output_path=f"./.voxlib/tmp/ref_{Path(ref_audio_path).stem}_processed.wav",
+            output_path=str(voice_refs_dir / f"ref_{Path(ref_audio_path).stem}_processed.wav"),
             target_sample_rate=24000,
             trim_silence=True,
             noise_reduce=True,
             normalize_peak_db=-3.0,
         )
 
-        # Transcribe if ref_text not provided
+        # --- Transcribe if ref_text not provided --- #
         if not ref_text:
             print("Transcribing reference audio...")
             asr_backend = self._get_asr_backend()
@@ -120,7 +148,6 @@ class VoiceCloner:
             ref_text = transcription.text
             print(f"Transcribed: {ref_text[:100]}...")
         else:
-            # Use provided text but validate it's reasonable
             if len(ref_text.strip()) < 10:
                 import warnings
                 warnings.warn(
@@ -128,25 +155,21 @@ class VoiceCloner:
                     "Consider providing full transcription for best results."
                 )
 
-        # Check for existing cached profile first
-        from voxlib.voice.manager import VoiceProfileManager
-        voice_manager = VoiceProfileManager()
-        cached_profile = voice_manager.get_cached_profile(processed_audio_path, ref_text.strip())
+        # --- Cache the result for next time --- #
+        # (second check in case another process cached while we were working)
+        ref_text_stripped = ref_text.strip()
+        cached_profile = self.voice_manager.get_cached_profile(processed_audio_path, ref_text_stripped)
         if cached_profile:
-            print(f"Using cached voice profile: {cached_profile.name}")
             return cached_profile
 
-        # Create voice profile
-        # Get TTS backend
         self._get_tts_backend()
 
-        # Create voice profile (for F5-TTS, this stores the processed reference)
         voice_profile = VoiceProfile(
             name=name or f"voice_{Path(ref_audio_path).stem}",
             backend="f5tts",
             ref_audio=processed_audio_path,
-            ref_text=ref_text.strip(),
-            embedding_path="",  # F5-TTS uses reference audio directly
+            ref_text=ref_text_stripped,
+            embedding_path="",
             meta={
                 "original_audio": ref_audio_path,
                 "original_text": ref_text,
@@ -154,32 +177,28 @@ class VoiceCloner:
             },
         )
 
-        # Cache the profile for future reuse
-        voice_manager.save_profile(voice_profile, ref_audio_path, ref_text.strip())
-
+        self.voice_manager.save_profile(voice_profile, ref_audio_path, ref_text_stripped)
         return voice_profile
 
-    def _get_tts_backend(self) -> TTSInterface:
-        """Lazy load TTS backend."""
-        if self._tts_backend is None:
-            if self.clone_config.tts_backend == "f5tts":
-                self._tts_backend = F5TTSBackend(self.config.tts.f5tts)
-            else:
-                raise ValueError(f"Unknown TTS backend: {self.clone_config.tts_backend}")
-        return self._tts_backend
+    # ------------------------------------------------------------------ #
+    #  Generate
+    # ------------------------------------------------------------------ #
 
-    def _get_asr_backend(self) -> ASRInterface:
-        """Lazy load ASR backend."""
-        if self._asr_backend is None:
-            if self.clone_config.asr_backend == "gigaam":
-                from voxlib.asr.gigaam import GigaAMBackend
-                self._asr_backend = GigaAMBackend(self.config.asr.gigaam)
-            elif self.clone_config.asr_backend == "whisper":
-                from voxlib.asr.whisper import WhisperBackend
-                self._asr_backend = WhisperBackend(self.config.asr.whisper)
-            else:
-                raise ValueError(f"Unknown ASR backend: {self.clone_config.asr_backend}")
-        return self._asr_backend
+    @staticmethod
+    def _calc_fix_duration(text: str, chars_per_sec: float = 12.0, margin: float = 1.0) -> float:
+        """Calculate a stable duration hint based on text length.
+
+        Args:
+            text: Input text (may contain '+' stress marks which don't affect length).
+            chars_per_sec: Average speech rate in characters/second.
+            margin: Seconds of padding added on top of the computed duration.
+
+        Returns:
+            Duration in seconds, always >= 2.0.
+        """
+        clean = text.replace("+", "").strip()
+        dur = len(clean) / chars_per_sec + margin
+        return max(dur, 2.0)
 
     def generate(
         self,
@@ -190,16 +209,14 @@ class VoiceCloner:
     ):
         """Generate speech from text using a cloned voice.
 
-        Args:
-            text: Text to synthesize. Can contain '+' stress marks for F5-TTS.
-            voice: Voice profile from clone_voice().
-            output_path: Output audio file path.
-            config: Optional generation config.
-
-        Returns:
-            Path to generated audio file.
+        If no generation config is provided a default is built with a
+        text-length-based fix_duration for tempo stabilisation (P1-3).
         """
         tts_backend = self._get_tts_backend()
+        if config is None:
+            config = TTSGenerationConfig(
+                fix_duration=self._calc_fix_duration(text),
+            )
         return tts_backend.generate(text, voice, output_path, config)
 
     def generate_batch(
@@ -209,18 +226,7 @@ class VoiceCloner:
         output_dir: str,
         config: Optional["TTSGenerationConfig"] = None,
     ) -> list[str]:
-        """Generate multiple texts in batch.
-
-        Args:
-            texts: List of texts to synthesize.
-            voice: Voice profile from clone_voice().
-            output_dir: Directory for output files.
-            config: Optional generation config.
-
-        Returns:
-            List of output file paths.
-        """
-        from pathlib import Path
+        """Generate multiple texts in batch."""
         tts_backend = self._get_tts_backend()
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -228,6 +234,9 @@ class VoiceCloner:
         results = []
         for i, text in enumerate(texts):
             output_path = str(output_dir / f"chunk_{i:04d}.wav")
-            result = tts_backend.generate(text, voice, output_path, config)
+            chunk_cfg = config or TTSGenerationConfig(
+                fix_duration=self._calc_fix_duration(text),
+            )
+            result = tts_backend.generate(text, voice, output_path, chunk_cfg)
             results.append(result)
         return results

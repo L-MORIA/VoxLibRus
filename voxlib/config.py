@@ -116,9 +116,10 @@ class OutputConfig(BaseModel):
 
 class AudioConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-    target_lufs: float = -16.0
-    peak_dbfs: float = -1.0
+    """Audio processing configuration."""
+    target_lufs: float = -20.0  # QUALITY.md: -20 LUFS (was -16)
+    peak_dbfs: float = -3.0      # QUALITY.md: -3 dBTP (was -1)
+    target_lra: float = 11.0
     chapter_pause_sec: float = 2.5
     output: OutputConfig = OutputConfig()
 

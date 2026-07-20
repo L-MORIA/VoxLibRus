@@ -204,10 +204,12 @@ def create_m4b_with_chapters(
             # Same chapter — add chunk duration, no pause
             current_group_dur += dur
         else:
-            # Chapter boundary — save group, insert pause, start new group
+            # Chapter boundary: add silence to the END of previous chapter,
+            # so its START marker aligns with actual speech (P0-7/b).
+            current_group_dur += chapter_pause_sec
             groups.append((current_group_title, current_group_dur))
             current_group_title = _sanitize_chapter_title(title)
-            current_group_dur = dur + chapter_pause_sec  # pause before this chapter
+            current_group_dur = dur  # no pause before new chapter
         prev_title = title
 
     # Save last group

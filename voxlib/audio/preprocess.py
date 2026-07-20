@@ -57,8 +57,10 @@ def prepare_reference(
         # Using FFmpeg's afftdn (spectral noise reduction)
         filters.append("afftdn=nf=-25")
 
-    # Normalize peak
+    # Normalize peak with validation (P0-9: prevent filter-graph injection)
     if normalize_peak_db is not None:
+        if not isinstance(normalize_peak_db, (int, float)):
+            raise TypeError(f"normalize_peak_db must be a number, got {type(normalize_peak_db).__name__}")
         # First normalize to target peak, then apply limiter
         filters.append(f"volume={normalize_peak_db}dB")
         # Soft limiter to prevent clipping
