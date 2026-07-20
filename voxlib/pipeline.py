@@ -337,26 +337,33 @@ class Pipeline:
             # Stage 8: Assemble final audiobook
             if "assemble" not in state.stages_completed:
                 print("\n=== Stage 8: Assembling audiobook ===")
+                out_fmt = self.config.audio.output.format
                 output_dir = Path(state.output_dir)
                 output_dir.mkdir(parents=True, exist_ok=True)
-
-                mp3_path = output_dir / f"{state.book_name}.mp3"
-                m4b_path = output_dir / f"{state.book_name}.m4b"
+                if out_fmt == "wav":
+                    out_path = output_dir / f"{state.book_name}.wav"
+                    is_mp3 = False
+                else:
+                    out_path = output_dir / f"{state.book_name}.mp3"
+                    is_mp3 = True
+                mp3_path = out_path if is_mp3 else None
+                m4b_path = output_dir / f"{state.book_name}.m4b" if out_fmt in ("m4b", "both") else None
 
                 assemble_audiobook(
                     chunk_files=state.normalized_chunks,
-                    output_mp3=str(mp3_path),
-                    output_m4b=str(m4b_path) if self.config.audio.output.format in ("m4b", "both") else None,
+                    output_mp3=str(out_path),
+                    output_m4b=str(m4b_path) if m4b_path else None,
                     chapter_titles=[c["chapter"] for c in state.chunks],
                     chapter_pause_sec=self.config.audio.chapter_pause_sec,
                 )
 
-                state.final_mp3 = str(mp3_path)
-                if m4b_path.exists():
+                if is_mp3:
+                    state.final_mp3 = str(mp3_path)
+                if m4b_path and Path(m4b_path).exists():
                     state.final_m4b = str(m4b_path)
                 state.stages_completed.append("assemble")
                 self._save_state()
-                print(f"Audiobook assembled: {mp3_path}")
+                print(f"Audiobook assembled: {out_path}")
 
             # Final state
             state.stages_completed.append("complete")

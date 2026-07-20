@@ -84,14 +84,21 @@ def assemble_audiobook(
         raise ValueError("No chunk files provided")
 
     ffmpeg = _validate_ffmpeg_path(ffmpeg_path)
+    output_path = str(Path(output_mp3).resolve())
+
+    # Choose codec based on output file extension
+    is_wav = output_path.lower().endswith(".wav")
+    if is_wav:
+        audio_codec = ["-c:a", "pcm_s24le"]  # 24-bit for Audition processing headroom
+    else:
+        audio_codec = ["-c:a", "libmp3lame", "-b:a", f"{mp3_bitrate}k"]
 
     # Single chunk — just convert directly
     if len(chunk_files) == 1:
-        cmd = [ffmpeg, "-y", "-i", chunk_files[0],
-               "-c:a", "libmp3lame", "-b:a", f"{mp3_bitrate}k",
-               "-map_metadata", "-1",
-               "-id3v2_version", "3", "-write_id3v1", "1",
-               str(Path(output_mp3).resolve())]
+        cmd = [ffmpeg, "-y", "-i", chunk_files[0]] + audio_codec + [
+               "-map_metadata", "-1", output_path]
+        if not is_wav:
+            cmd.extend(["-id3v2_version", "3", "-write_id3v1", "1"])
         subprocess.run(cmd, check=True, capture_output=True)
         return
 
@@ -144,11 +151,12 @@ def assemble_audiobook(
             "-filter_complex",
             f"concat=n={n_inputs}:v=0:a=1[out]",
             "-map", "[out]",
-            "-c:a", "libmp3lame", "-b:a", f"{mp3_bitrate}k",
+        ] + audio_codec + [
             "-map_metadata", "-1",
-            "-id3v2_version", "3", "-write_id3v1", "1",
-            output_mp3,
+            output_path,
         ]
+        if not is_wav:
+            cmd.extend(["-id3v2_version", "3", "-write_id3v1", "1"])
         subprocess.run(cmd, check=True, capture_output=True)
 
         # Create M4B with chapters if requested

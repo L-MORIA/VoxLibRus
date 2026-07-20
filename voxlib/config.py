@@ -110,7 +110,7 @@ class GenerationConfig(BaseModel):
 class OutputConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    format: Literal["mp3", "m4b", "both"] = "mp3"
+    format: Literal["mp3", "m4b", "both", "wav"] = "mp3"
     mp3_bitrate: int = 192
 
 

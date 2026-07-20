@@ -48,8 +48,8 @@ class TestConfigLoad:
             assert cfg.audio.target_lufs == -20.0
             assert cfg.audio.peak_dbfs == -3.0
             assert cfg.audio.chapter_pause_sec == 2.5
-            assert cfg.audio.output.format == "mp3"
-            assert cfg.audio.output.mp3_bitrate == 192
+            assert cfg.audio.output.format == "wav"  # default changed to wav
+            assert cfg.audio.output.mp3_bitrate == 320  # config.yaml changed to 320
 
     def test_profiles_dir_resolves(self, cfg: Config):
         assert cfg.profiles_dir.name == "speakers"
@@ -70,7 +70,7 @@ class TestPydanticValidation:
 
     def test_invalid_output_format_raises(self):
         with pytest.raises(ValidationError):
-            Config(**{"audio": {"output": {"format": "wav"}}})
+            Config(**{"audio": {"output": {"format": "ogg"}}})
 
     @pytest.mark.filterwarnings("ignore::UserWarning")  # CustomVoice warning expected
     def test_customvoice_triggers_warning(self):
