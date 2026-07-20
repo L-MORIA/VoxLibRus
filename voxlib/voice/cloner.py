@@ -162,18 +162,20 @@ class VoiceCloner:
         if cached_profile:
             return cached_profile
 
+        # Ensure TTS backend is loaded (needed for model_variant meta below).
         self._get_tts_backend()
+        backend_name = self.clone_config.tts_backend
 
         voice_profile = VoiceProfile(
             name=name or f"voice_{Path(ref_audio_path).stem}",
-            backend="f5tts",
+            backend=backend_name,  # was hardcoded "f5tts" (M6)
             ref_audio=processed_audio_path,
             ref_text=ref_text_stripped,
             embedding_path="",
             meta={
                 "original_audio": ref_audio_path,
                 "original_text": ref_text,
-                "model_variant": "F5TTS_v1_Base_accent_tune",
+                "model_variant": getattr(self.config.tts.f5tts, "variant", "F5TTS_v1_Base_accent_tune"),
             },
         )
 

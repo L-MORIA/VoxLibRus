@@ -56,33 +56,6 @@ def _parse_skip_stages(skip_str: str) -> set[str]:
     return {s.strip() for s in skip_str.split(",") if s.strip()}
 
 
-def _parse_chapter_range(range_str: str) -> list[int]:
-    """Parse chapter range string like '1-5,7,10-12' into list of chapter numbers (1-indexed)."""
-    chapters = set()
-    for part in range_str.split(","):
-        part = part.strip()
-        if "-" in part:
-            start, end = map(int, part.split("-"))
-            chapters.update(range(start, end + 1))
-        else:
-            chapters.add(int(part))
-    return sorted(chapters)
-
-
-def _filter_chapters(chapters: dict, chapter_range: Optional[list[int]]) -> dict:
-    """Filter chapters by 1-indexed chapter numbers."""
-    if chapter_range is None:
-        return chapters
-    return {title: text for i, (title, text) in enumerate(chapters.items(), 1) if i in chapter_range}
-
-
-def _parse_skip_stages(skip_str: str) -> set[str]:
-    """Parse skip stages string like 'extract,clean,accents' into set."""
-    if not skip_str:
-        return set()
-    return {s.strip() for s in skip_str.split(",") if s.strip()}
-
-
 @app.command()
 def run(
     book: Path = typer.Option(..., "--book", help="Path to book (PDF/EPUB/DOCX)"),

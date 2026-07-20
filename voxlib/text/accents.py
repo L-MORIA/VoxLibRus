@@ -77,8 +77,7 @@ def _load_accentizer(timeout: float = 8.0) -> bool:
                 logger.warning(f"RUAccent load failed with model '{model_size}': {exception[0]}")
             else:
                 logger.warning(f"RUAccent load timed out after {timeout}s with model '{model_size}'")
-            # Try next model
-            continue
+            # Fall through to next model in the loop (M4: removed redundant continue)
 
     # All models failed
     logger.warning("RUAccent failed to load with all available models")

@@ -60,7 +60,7 @@ qa_gate:
   duration_min_sec: 0.5
   duration_max_sec: 120.0   # one book chunk can be up to ~60s of speech
   silence_threshold_db: -60.0
-  max_silence_ratio: 0.4
+  max_silence_ratio: 0.6   # was 0.4 — too strict, rejected chunks with natural pauses
   max_retries: 3
 
 audio:

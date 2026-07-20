@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Optional
 
 from voxlib.tts.base import VoiceProfile
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -66,7 +69,8 @@ class VoiceProfileManager:
                 with open(self.index_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 self._index = {k: VoiceProfileMeta.from_dict(v) for k, v in data.items()}
-            except Exception:
+            except Exception as exc:
+                logger.warning("Failed to load voice profile index %s: %s", self.index_path, exc)
                 self._index = {}
         else:
             self._index = {}
@@ -121,8 +125,8 @@ class VoiceProfileManager:
                             embedding_path="",
                             meta=meta.to_dict(),
                         )
-                except Exception:
-                    pass  # Fall through to cache miss
+                except Exception as exc:
+                    logger.debug("Cache profile %s unreadable: %s", combined_hash, exc)
         return None
 
     def save_profile(

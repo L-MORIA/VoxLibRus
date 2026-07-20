@@ -255,6 +255,7 @@ def split_audiobook_by_chapters(
     chapter_times: list[float],
     output_dir: str,
     prefix: str = "chapter",
+    ffmpeg_path: str = "",
 ) -> list[str]:
     """Split a single audiobook file into chapter files."""
     output_dir = Path(output_dir)
@@ -266,7 +267,7 @@ def split_audiobook_by_chapters(
     output_files = []
     for i, (start, end) in enumerate(zip(times[:-1], times[1:])):
         out_path = output_dir / f"{prefix}_{i+1:03d}.mp3"
-        cmd = [_FFMPEG, "-y", "-i", input_audio,
+        cmd = [_validate_ffmpeg_path(ffmpeg_path), "-y", "-i", input_audio,
                "-ss", str(start), "-to", str(end),
                "-c:a", "libmp3lame", "-b:a", "192k", str(out_path)]
         subprocess.run(cmd, check=True, capture_output=True)

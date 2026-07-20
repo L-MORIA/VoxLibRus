@@ -326,7 +326,7 @@ class Pipeline:
                 normalized_paths = []
                 for i, path in enumerate(state.chunks_generated):
                     out_path = norm_dir / Path(path).name
-                    loudness_normalize(path, str(out_path), target_lufs=-16.0)
+                    loudness_normalize(path, str(out_path), target_lufs=self.config.audio.target_lufs)
                     normalized_paths.append(str(out_path))
 
                 state.normalized_chunks = normalized_paths
