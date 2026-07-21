@@ -150,26 +150,25 @@ def assemble_audiobook(
             inputs.extend(["-i", f])
         n_inputs = len(interleaved)
 
-        # Build filter_complex with per-chunk afade (smooth chunk boundaries)
-        # Apply 30ms fade-out at end + 30ms fade-in at start to each chunk.
-        # Silence files (odd indices) pass through unchanged.
-        filter_parts = []
-        concat_inputs = []
-        for idx in range(n_inputs):
-            lbl = f"a{idx}"
-            if idx % 2 == 0:
-                # Chunk file — fade-out last 30ms to avoid abrupt stop into silence
-                filter_parts.append(
-                    f"[{idx}:a]afade=t=out:d=0.03[{lbl}]"
-                )
-            else:
-                # Silence file — pass through
-                filter_parts.append(f"[{idx}:a]acopy[{lbl}]")
-            concat_inputs.append(f"[{lbl}]")
-
-        concat_str = "".join(concat_inputs)
-        filter_parts.append(f"{concat_str}concat=n={n_inputs}:v=0:a=1[out]")
-        filter_graph = ";".join(filter_parts)
+        # Chain acrossfade between consecutive inputs, then apply a
+        # gentle notch filter at 262Hz to reduce model-generated hum.
+        # acrossfade overlaps the LAST 120ms of input N with the FIRST 120ms
+        # of input N+1. Since silence is at zero level, this creates a
+        # smooth fade-out of chunk audio into silence and a smooth fade-in
+        # of the next chunk — no audible thump/pop.
+        # Also apply HPF/LPF to match Vocos's native bandwidth (120-8000Hz)
+        # removing the low-freq buzz while keeping the natural warm sound.
+        post = ",highpass=f=120,lowpass=f=8000"
+        if n_inputs == 1:
+            filter_graph = f"[0:a]concat=n=1:v=0:a=1{post}[out]"
+        elif n_inputs == 2:
+            filter_graph = f"[0:a][1:a]acrossfade=d=0.12:c1=tri:c2=tri{post}[out]"
+        else:
+            parts = [f"[{i}:a]" for i in range(n_inputs)]
+            chain = f"{parts[0]}{parts[1]}acrossfade=d=0.12:c1=tri:c2=tri[tmp1]"
+            for i in range(2, n_inputs):
+                chain += f";[tmp{i-1}]{parts[i]}acrossfade=d=0.12:c1=tri:c2=tri[tmp{i}]"
+            filter_graph = f"{chain};[tmp{n_inputs-1}]highpass=f=120,lowpass=f=8000[out]"
 
         cmd = [ffmpeg, "-y"] + inputs + [
             "-filter_complex", filter_graph,
