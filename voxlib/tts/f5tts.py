@@ -155,10 +155,12 @@ class F5TTSBackend(TTSInterface):
         self._remove_silence = remove_silence_for_generated_wav
 
     def _get_checkpoint_path(self) -> str:
-        """Get path to the model checkpoint based on variant."""
-        variant = getattr(self.config, "variant", "F5TTS_v1_Base_accent_tune")
+        """Get path to the model checkpoint.
 
-        # Map variant to HF repo file
+        Prefers .safetensors (faster, smaller, no pickle) with
+        fallback to .pt (full training checkpoint).
+        """
+        variant = getattr(self.config, "variant", "F5TTS_v1_Base_accent_tune")
         variant_map = {
             "F5TTS_v1_Base": "F5TTS_v1_Base/model_240000.pt",
             "F5TTS_v1_Base_accent_tune": "F5TTS_v1_Base_accent_tune/model_last.pt",
@@ -167,8 +169,13 @@ class F5TTSBackend(TTSInterface):
         repo_id = "Misha24-10/F5-TTS_RUSSIAN"
         filename = variant_map.get(variant, "F5TTS_v1_Base_accent_tune/model_last.pt")
 
+        # Try local safetensors first (converted from full checkpoint)
         from huggingface_hub import hf_hub_download
-        return hf_hub_download(repo_id=repo_id, filename=filename)
+        pt_path = hf_hub_download(repo_id=repo_id, filename=filename)
+        safetensors_path = pt_path.rsplit(".", 1)[0] + ".safetensors"
+        if os.path.exists(safetensors_path):
+            return safetensors_path
+        return pt_path
 
     def supports_stress_marks(self) -> bool:
         """F5-TTS_RUSSIAN natively supports '+' stress marks."""
