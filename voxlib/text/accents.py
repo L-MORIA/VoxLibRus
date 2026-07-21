@@ -104,8 +104,9 @@ def _load_accentizer(timeout: float = 8.0) -> bool:
 def fix_accents(text: str) -> str:
     """Place stress marks in Russian text.
 
-    Processes text sentence-by-sentence to work around ONNX
-    token_type_ids bug on long inputs.
+    Preserves paragraph breaks (\\n\\n) for the chunker — splits text
+    into paragraphs first, processes each paragraph sentence-by-sentence,
+    then rejoins with original paragraph separators.
 
     Args:
         text: Russian text.
@@ -118,21 +119,35 @@ def fix_accents(text: str) -> str:
     if not _load_accentizer():
         return text
 
-    # Process sentence-by-sentence to avoid ONNX token_type_ids bug
-    # (turbo3.1/tiny models crash on long text with "missing token_type_ids")
     import re as _re
-    sentences = _re.split(r'(?<=[.!?…])\s+', text)
-    result_parts = []
-    for sent in sentences:
-        if not sent.strip():
+
+    # Split into paragraphs preserving separators
+    paragraphs = _re.split(r'(\n\s*\n)', text)
+    result_paras = []
+
+    for piece in paragraphs:
+        if _re.match(r'^\n\s*\n$', piece):
+            # Paragraph separator — keep as-is
+            result_paras.append(piece)
             continue
-        try:
-            stressed = _accentizer.process_all(sent)  # type: ignore
-            result_parts.append(stressed)
-        except Exception:
-            # ONNX model failed on this sentence — return original
-            result_parts.append(sent)
-    return " ".join(result_parts)
+        if not piece.strip():
+            continue
+
+        # Process this paragraph sentence-by-sentence
+        sentences = _re.split(r'(?<=[.!?…])\s+', piece)
+        stressed_sents = []
+        for sent in sentences:
+            if not sent.strip():
+                continue
+            try:
+                stressed = _accentizer.process_all(sent)
+                stressed_sents.append(stressed)
+            except Exception:
+                stressed_sents.append(sent)
+
+        result_paras.append(" ".join(stressed_sents))
+
+    return "".join(result_paras)
 
 
 def is_available() -> bool:

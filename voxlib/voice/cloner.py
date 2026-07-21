@@ -40,7 +40,9 @@ class VoiceCloner:
         self.clone_config.asr_backend = getattr(self.config.asr, "primary", "gigaam")
         self._tts_backend: Optional[TTSInterface] = None
         self._asr_backend: Optional[ASRInterface] = None
-        self.voice_manager = VoiceProfileManager()
+        self.voice_manager = VoiceProfileManager(
+            cache_dir=Path(self.config.project.temp_dir) / "voice_profiles",
+        )
 
     # ------------------------------------------------------------------ #
     #  Backend resolution
@@ -117,13 +119,14 @@ class VoiceCloner:
             )
 
         # --- Cache check BEFORE expensive preprocess/ASR (P1-6 fix) --- #
-        # Compute hash from ORIGINAL audio path + text (if known) —
-        # if cache hits we skip preprocess and ASR entirely.
+        # Only when ref_text is provided — without it we don't have a key.
         ref_text_stripped = ref_text.strip() if ref_text else ""
-        cached_profile = self.voice_manager.get_cached_profile(ref_audio_path, ref_text_stripped)
-        if cached_profile:
-            print(f"Using cached voice profile: {cached_profile.name}")
-            return cached_profile
+        cached_profile = None
+        if ref_text_stripped:
+            cached_profile = self.voice_manager.get_cached_profile(ref_audio_path, ref_text_stripped)
+            if cached_profile:
+                print(f"Using cached voice profile: {cached_profile.name}")
+                return cached_profile
 
         # --- Preprocess reference audio (resample, denoise, trim) --- #
         # P0-12: path now uses config.project.temp_dir, not cwd-relative "./.voxlib/tmp/"
@@ -179,7 +182,7 @@ class VoiceCloner:
             },
         )
 
-        self.voice_manager.save_profile(voice_profile, ref_audio_path, ref_text_stripped)
+        self.voice_manager.save_profile(voice_profile, processed_audio_path, ref_text_stripped)
         return voice_profile
 
     # ------------------------------------------------------------------ #

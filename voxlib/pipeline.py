@@ -36,7 +36,8 @@ class PipelineState:
     # Progress tracking
     stages_completed: list[str] = field(default_factory=list)
     chunks_total: int = 0
-    chunks_generated: list[int] = field(default_factory=list)
+    chunks_generated: list[str] = field(default_factory=list)  # paths
+    chapter_titles_generated: list[str] = field(default_factory=list)  # synced with chunks_generated
     chunks_failed: list[dict] = field(default_factory=list)
 
     # Metadata
@@ -270,6 +271,7 @@ class Pipeline:
                 qa_cfg = QAConfig.from_config(qa_section)
 
                 generated_paths = []
+                generated_chapter_titles = []
 
                 if not qa_enabled:
                     # QA gate disabled — generate the whole batch and accept results.
@@ -279,6 +281,7 @@ class Pipeline:
                         output_dir=str(chapter_dir),
                     )
                     generated_paths = [str(p) for p in generated_paths]
+                    generated_chapter_titles = [c["chapter"] for c in state.chunks]
                 else:
                     # Generate each chunk, then run QA with retry-on-failure.
                     # IMPORTANT (C1): the chunk must be generated BEFORE the first
@@ -309,10 +312,12 @@ class Pipeline:
                         )
                         if result.passed:
                             generated_paths.append(str(chunk_path))
+                            generated_chapter_titles.append(chunk["chapter"])
                         else:
                             state.chunks_failed.append({"id": i, "errors": result.errors})
 
                 state.chunks_generated = generated_paths
+                state.chapter_titles_generated = generated_chapter_titles
                 state.stages_completed.append("generate")
                 self._save_state()
                 print(f"Generated {len(generated_paths)} audio chunks")
@@ -351,9 +356,9 @@ class Pipeline:
 
                 assemble_audiobook(
                     chunk_files=state.normalized_chunks,
-                    output_mp3=str(out_path),
+                    output_path=str(out_path),
                     output_m4b=str(m4b_path) if m4b_path else None,
-                    chapter_titles=[c["chapter"] for c in state.chunks],
+                    chapter_titles=state.chapter_titles_generated or [c["chapter"] for c in state.chunks],
                     chapter_pause_sec=self.config.audio.chapter_pause_sec,
                 )
 

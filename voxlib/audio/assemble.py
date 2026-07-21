@@ -60,7 +60,7 @@ _FFMPEG = _find_ffmpeg()
 
 def assemble_audiobook(
     chunk_files: list[str],
-    output_mp3: str,
+    output_path: str,
     output_m4b: Optional[str] = None,
     chapter_titles: Optional[list[str]] = None,
     chapter_pause_sec: float = 2.5,
@@ -84,10 +84,10 @@ def assemble_audiobook(
         raise ValueError("No chunk files provided")
 
     ffmpeg = _validate_ffmpeg_path(ffmpeg_path)
-    output_path = str(Path(output_mp3).resolve())
+    output_mp3 = str(Path(output_path).resolve())
 
     # Choose codec based on output file extension
-    is_wav = output_path.lower().endswith(".wav")
+    is_wav = output_mp3.lower().endswith(".wav")
     if is_wav:
         audio_codec = ["-c:a", "pcm_s24le"]  # 24-bit for Audition processing headroom
     else:
