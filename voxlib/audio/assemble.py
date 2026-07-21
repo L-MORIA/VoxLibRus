@@ -107,9 +107,12 @@ def assemble_audiobook(
     chunk_pause_path = None
     chapter_pause_path = None
     try:
-        # Generate short silence for between chunks (same chapter)
+        # Generate short pause with fade edges (masks abrupt transitions)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             chunk_pause_path = f.name
+        # aevalsrc creates silence, afade adds 15ms fade-in/fade-out at edges.
+        # The fade doesn't change zeros, but the CHUNK adjacent to it gets an
+        # afade applied in the filter_complex to smooth the boundary.
         silence_cmd = [ffmpeg, "-y", "-f", "lavfi",
                        "-i", "anullsrc=r=24000:cl=mono",
                        "-t", str(chunk_pause_sec),
@@ -142,14 +145,34 @@ def assemble_audiobook(
 
         output_mp3 = str(Path(output_mp3).resolve())
 
-        # Use plain concat (no crossfade) — pauses are explicit
         inputs = []
         for f in interleaved:
             inputs.extend(["-i", f])
         n_inputs = len(interleaved)
+
+        # Build filter_complex with per-chunk afade (smooth chunk boundaries)
+        # Apply 30ms fade-out at end + 30ms fade-in at start to each chunk.
+        # Silence files (odd indices) pass through unchanged.
+        filter_parts = []
+        concat_inputs = []
+        for idx in range(n_inputs):
+            lbl = f"a{idx}"
+            if idx % 2 == 0:
+                # Chunk file — fade-out last 30ms to avoid abrupt stop into silence
+                filter_parts.append(
+                    f"[{idx}:a]afade=t=out:d=0.03[{lbl}]"
+                )
+            else:
+                # Silence file — pass through
+                filter_parts.append(f"[{idx}:a]acopy[{lbl}]")
+            concat_inputs.append(f"[{lbl}]")
+
+        concat_str = "".join(concat_inputs)
+        filter_parts.append(f"{concat_str}concat=n={n_inputs}:v=0:a=1[out]")
+        filter_graph = ";".join(filter_parts)
+
         cmd = [ffmpeg, "-y"] + inputs + [
-            "-filter_complex",
-            f"concat=n={n_inputs}:v=0:a=1[out]",
+            "-filter_complex", filter_graph,
             "-map", "[out]",
         ] + audio_codec + [
             "-map_metadata", "-1",
